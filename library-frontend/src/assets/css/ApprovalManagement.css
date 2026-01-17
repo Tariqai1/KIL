@@ -1,0 +1,28 @@
+/* src/assets/css/ApprovalManagement.css */
+
+/* --- Tab Styles (if Tailwind defaults aren't enough) --- */
+/* .tab-button.active {
+  /* Example: border-color: #4f46e5; (indigo-500) */
+/* } */
+
+/* --- Status Badge Styles (Handled by Tailwind classes like bg-green-100) --- */
+/* .status-approved { ... } */
+/* .status-rejected { ... } */
+
+/* --- Rejection Form Styles --- */
+.rejection-form textarea {
+  /* Tailwind classes in JSX handle this */
+}
+.rejection-buttons {
+  /* Tailwind classes in JSX handle this */
+}
+
+/* --- Reviewed Table Styles --- */
+.reviewed-table {
+  /* Tailwind classes min-w-full divide-y etc. handle this */
+}
+
+/* --- Placeholder Icon Styles (if needed) --- */
+.no-cover-placeholder-small {
+  /* Tailwind classes handle this */
+}

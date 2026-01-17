@@ -1,0 +1,190 @@
+/* ================================
+   GOOGLE FONTS (Urdu / Arabic)
+================================ */
+@import url("https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Lateef&family=Noto+Nastaliq+Urdu:wght@400;700&family=Noto+Naskh+Arabic:wght@400;700&family=Scheherazade+New:wght@400;700&display=swap");
+
+/* ================================
+   GLOBAL RESET (IMPORTANT)
+================================ */
+* {
+  box-sizing: border-box;
+}
+
+/* ================================
+   URDU FONT CLASS
+================================ */
+.font-nastaleeq {
+  font-family: "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", serif;
+}
+
+/* ================================
+   CUSTOM SCROLLBAR (MS WORD FEEL)
+================================ */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 12px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #b9bcc1;
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ea2a8;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ================================
+   WORKSPACE (OUTER SCROLL ONLY)
+================================ */
+.editor-workspace {
+  background-color: #e9ecef;
+  height: 100%;
+  overflow-y: auto; /* ONLY ONE SCROLL */
+  overflow-x: hidden;
+}
+
+/* ================================
+   WORD PAGE (NO INNER SCROLL)
+================================ */
+.word-page-container {
+  background-color: white;
+  border-radius: 6px;
+  position: relative;
+
+  /* 🚫 ABSOLUTELY NO SCROLL INSIDE PAGE */
+  overflow: hidden;
+
+  /* MS Word page shadow */
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+/* ================================
+   EDITABLE CONTENT (CRITICAL FIX)
+================================ */
+.editor-content {
+  width: 100%;
+  height: auto;
+
+  outline: none;
+  border: none;
+
+  /* 🚫 VERY IMPORTANT */
+  overflow: hidden !important;
+
+  /* Word-like text behavior */
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+
+  font-size: 12pt;
+  line-height: 1.6;
+  color: #111;
+}
+
+/* Paragraph spacing (Word style) */
+.editor-content p {
+  margin: 0 0 10px 0;
+}
+
+/* Images stay inside page */
+.editor-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ================================
+   HEADINGS
+================================ */
+.editor-content h1 {
+  font-size: 26px;
+  font-weight: 800;
+  margin: 16px 0;
+}
+
+.editor-content h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 14px 0;
+}
+
+.editor-content h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 12px 0;
+}
+
+/* ================================
+   LISTS
+================================ */
+.editor-content ul,
+.editor-content ol {
+  padding-left: 28px;
+  margin: 10px 0;
+}
+
+/* ================================
+   LINKS
+================================ */
+.editor-content a {
+  color: #2b579a;
+  text-decoration: underline;
+}
+
+/* ================================
+   RULER (STICKY – MS WORD STYLE)
+================================ */
+.ruler-container {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+
+  background: #f3f2f1;
+  border-bottom: 1px solid #d1d5db;
+
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+/* ================================
+   REMOVE ALL INNER SCROLL BARS
+================================ */
+.word-page-container * {
+  scrollbar-width: none; /* Firefox */
+}
+
+.word-page-container *::-webkit-scrollbar {
+  display: none; /* Chrome */
+}
+
+/* ================================
+   PRINT (REAL PAGE BREAKS)
+================================ */
+@media print {
+  body {
+    background: white !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .editor-workspace {
+    overflow: visible !important;
+  }
+
+  .word-page-container {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    page-break-after: always;
+  }
+
+  .editor-content {
+    overflow: visible !important;
+  }
+}

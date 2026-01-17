@@ -1,0 +1,54 @@
+/* src/assets/css/CopiesIssuing.css */
+
+/* --- Inline Form Styles (Add Copy, Issue, Return) --- */
+/* Ye styles Tailwind ke 'form-section' aur 'inline-form' classes ke saath kaam karte hain */
+.form-section {
+  /* Tailwind classes bg-white p-6 rounded-lg shadow-sm border border-gray-200 se handle ho gaya */
+}
+
+.form-section h3 {
+  /* Tailwind classes text-lg font-medium text-gray-800 mb-4 se handle ho gaya */
+}
+
+.inline-form {
+  /* Tailwind classes flex flex-col sm:flex-row gap-4 items-end se handle ho gaya */
+}
+
+.inline-form.wrap {
+  /* Tailwind class 'flex-wrap' se handle ho gaya */
+}
+
+.inline-form .form-group {
+  /* Tailwind classes flex-grow w-full sm:w-auto se handle ho gaya */
+  margin-bottom: 0; /* Ensures items align correctly */
+}
+
+.inline-form .form-group label {
+  /* Tailwind class 'labelClass' (ya 'block text-sm...') se handle ho gaya */
+}
+
+.inline-form button {
+  /* Tailwind classes ${primaryButtonClass} w-full sm:w-auto se handle ho gaya */
+}
+
+/* --- Table Specific Styles --- */
+/* Ye classes JSX mein dynamically lagaye gaye hain (e.g., `status-available`) */
+/* Tailwind in classes ko automatically generate karta hai (e.g., bg-green-100, text-green-800) */
+/* Isliye, alag se CSS ki zaroorat nahi hai. */
+
+/* Example (Agar aap custom CSS chahte hain):
+.copies-table .status-available {
+    color: #15803d; 
+    font-weight: 600;
+}
+.copies-table .status-on-loan {
+    color: #d97706; 
+    font-weight: 600;
+}
+*/
+
+/* Date cells ko wrap hone se rokna (Tailwind 'whitespace-nowrap' se handle ho gaya) */
+.issues-table td:nth-child(5),
+.issues-table td:nth-child(6) {
+  /* Tailwind class 'whitespace-nowrap' se handle ho gaya */
+}

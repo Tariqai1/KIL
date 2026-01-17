@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* Default Reset - Ye zaroori hai */
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+/* Ye sabse important part hai Editor k liye */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+   /* Double scrollbar hatayega */
+  display: block;   /* Flex hata kar block karna zaroori hai */
+}
+
+/* Agar App.css tang kare to uske liye safety */
+#root {
+  max-width: 100% !important;
+  text-align: left !important;
+}
+html, body, #root {
+  height: 100%;
+  overflow-y: auto;
+}
+.font-urdu {
+  font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif;
+  direction: rtl;
+}

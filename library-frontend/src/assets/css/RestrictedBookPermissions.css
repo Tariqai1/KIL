@@ -1,0 +1,76 @@
+/* src/assets/css/RestrictedBookPermissions.css */
+
+/* Inherit base styles from ManagementPages.css or Tailwind */
+
+.description-text {
+    /* Styles moved to Tailwind classes */
+}
+
+.book-selection {
+    /* Styles moved to Tailwind classes */
+}
+
+.permissions-display-grid {
+    /* Styles moved to Tailwind classes */
+}
+
+.assign-permission-section,
+.current-permissions-section {
+   /* Styles moved to Tailwind classes */
+}
+
+.assign-permission-section h3,
+.current-permissions-section h3 {
+    /* Styles moved to Tailwind classes */
+}
+
+/* Radio button group styling (Keep if not fully handled by Tailwind easily) */
+.radio-group label:first-of-type { /* "Assign To:" label */
+    /* Styles moved to Tailwind classes */
+}
+.radio-group label { /* Individual radio labels */
+   /* Styles moved to Tailwind classes */
+}
+.radio-group input[type="radio"] {
+   /* Styles moved to Tailwind classes */
+}
+
+/* Current Permissions List */
+.permissions-list {
+   /* Styles moved to Tailwind classes */
+}
+
+.permissions-list li {
+   /* Styles moved to Tailwind classes */
+}
+
+.permissions-list span {
+   /* Styles moved to Tailwind classes */
+}
+.permissions-list span strong {
+   /* Styles moved to Tailwind classes */
+}
+
+/* Keep revoke button styles if you prefer custom over Tailwind */
+.revoke-button {
+  /* Styles moved to Tailwind classes in the JSX */
+  /* background-color: transparent;
+  border: 1px solid #dc3545;
+  color: #dc3545;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease; */
+}
+/* .revoke-button:hover {
+  background-color: #dc3545;
+  color: white;
+}
+.revoke-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+} */
+
+/* Ensure form-group, input, select, button styles from ManagementPages.css/Tailwind are sufficient */

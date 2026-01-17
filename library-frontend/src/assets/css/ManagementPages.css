@@ -1,0 +1,35 @@
+/* Ensure these styles or similar exist */
+
+/* Pagination Button Style (example) */
+.pagination-button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ccc;
+    background-color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+.pagination-button:hover:not(:disabled) { background-color: #f0f0f0; }
+.pagination-button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Status Badge Styles (based on Tailwind classes in JSX now) */
+/* You might not need these specific CSS rules anymore if using Tailwind badges */
+/* .status-available { color: #16a34a; font-weight: bold; } */
+/* .status-on-loan { color: #f97316; font-weight: bold; } */
+/* .status-lost, .status-damaged { color: #dc2626; font-weight: bold; } */
+
+/* Inline Form Styles */
+.inline-form { display: flex; gap: 1rem; align-items: flex-end; }
+.inline-form.wrap { flex-wrap: wrap; }
+.inline-form .form-group { flex-grow: 1; margin-bottom: 0; min-width: 180px; }
+.inline-form .form-group label { margin-bottom: 0.3rem; font-size: 0.9em; }
+.inline-form button { white-space: nowrap; flex-shrink: 0; }
+
+/* General styles inherited from ManagementPages.css or Tailwind base */
+/* .list-header { ... } */
+/* .search-controls { ... } */
+/* .search-input { ... } */
+/* .refresh-button { ... } */
+/* .management-table { ... } */
+/* .table-responsive { ... } */
+/* .tabs { ... } etc. */

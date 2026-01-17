@@ -1,0 +1,243 @@
+/* Ruler Styles */
+.ruler-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  background: linear-gradient(to bottom, #f5f5f5, #efefef);
+  border-bottom: 1px solid #d0d0d0;
+  padding: 0 16px;
+  position: relative;
+  font-size: 11px;
+  user-select: none;
+  flex-direction: row-reverse;
+}
+
+.ruler-tick {
+  position: absolute;
+  height: 8px;
+  width: 1px;
+  background-color: #999;
+  bottom: 0;
+}
+
+.ruler-tick.major {
+  height: 12px;
+}
+
+.ruler-number {
+  position: absolute;
+  font-size: 10px;
+  color: #666;
+  bottom: -18px;
+}
+
+.ruler-marker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 10px solid #4f46e5;
+  opacity: 0.7;
+  bottom: 0;
+  z-index: 10;
+}
+
+/* Document Page */
+.document-page {
+  width: 210mm;
+  min-height: 297mm;
+  background: white;
+  padding: 25.4mm;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), 0 0 1px rgba(0, 0, 0, 0.05);
+  outline: none;
+  direction: rtl;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 16px;
+  color: #333;
+  line-height: 1.8;
+  border-radius: 4px;
+}
+
+.document-page:focus {
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.2), 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.document-page::-webkit-scrollbar {
+  width: 12px;
+}
+
+.document-page::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.document-page::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #999, #666);
+  border-radius: 10px;
+}
+
+.document-page::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(to bottom, #888, #555);
+}
+
+/* Dropdown Menus */
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 240px;
+  padding: 4px 0;
+  margin-top: 4px;
+}
+
+.dropdown-item {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.dropdown-item:hover:not(.text-gray-300) {
+  background-color: #f3f4f6;
+}
+
+.item-icon {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.item-shortcut {
+  margin-left: auto;
+  font-size: 11px;
+  color: #999;
+}
+
+.item-arrow {
+  margin-left: 8px;
+  font-size: 10px;
+  color: #999;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background-color: #e5e7eb;
+  margin: 4px 0;
+}
+
+/* Sidebar */
+.doc-sidebar {
+  width: 240px;
+  background: #fafafa;
+  border-right: 1px solid #e5e7eb;
+  transition: all 0.3s ease;
+}
+
+.doc-sidebar.collapsed {
+  width: 48px;
+}
+
+.doc-sidebar button {
+  transition: background-color 0.15s;
+}
+
+.doc-sidebar button:hover {
+  background-color: #f0f0f0;
+}
+
+/* Print Styles */
+@media print {
+  .ruler-container,
+  .formatting-toolbar,
+  .doc-sidebar,
+  footer,
+  header,
+  button,
+  input[type="text"],
+  select {
+    display: none !important;
+  }
+
+  .document-page {
+    box-shadow: none;
+    margin: 0;
+    padding: 2.54cm;
+    page-break-after: always;
+  }
+
+  main {
+    background: white !important;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromTop {
+  from {
+    transform: translateY(-4px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-in {
+  animation: fadeIn 0.15s ease-in-out;
+}
+
+.fade-in {
+  animation: fadeIn 0.15s ease-in-out;
+}
+
+.slide-in-from-top-1 {
+  animation: slideInFromTop 0.1s ease-out;
+}
+
+.zoom-in {
+  animation: zoomIn 0.15s ease-out;
+}
+
+.duration-100 {
+  animation-duration: 0.1s;
+}
+
+.duration-150 {
+  animation-duration: 0.15s;
+}
+
+.duration-200 {
+  animation-duration: 0.2s;
+}
