@@ -1,123 +1,155 @@
-import api from './axiosConfig'; // Aapka configured axios instance
+import api from './axiosConfig';
 
-// Keys define kar rahe hain taaki typo na ho
-const TOKEN_KEY = 'token';
+// ✅ Standard Keys (Must be consistent)
+const ACCESS_TOKEN_KEY = 'access_token';
 const USER_KEY = 'user_details';
 
 export const authService = {
+    /**
+     * 🟢 CHECK AUTHENTICATION STATUS
+     * Use this in Modals or protected routes to see if user is logged in.
+     */
+    isAuthenticated() {
+        const token = this.getToken();
+        return !!token; // Returns true if token is not null/empty
+    },
 
     /**
-     * 1. FULL LOGIN PROCESS
-     * - Step A: Token lo (Username/Password se)
-     * - Step B: Token save karo
-     * - Step C: User ki profile (Role) fetch karo
+     * 🟢 LOGIN FLOW
      */
-    async login(username, password) {
+    async login(username, password, rememberMe = true) {
         try {
-            // --- Step A: Request Token (Form Data Format) ---
             const params = new URLSearchParams();
             params.append('username', username);
             params.append('password', password);
 
-            // Note: Backend expects 'application/x-www-form-urlencoded'
             const tokenResponse = await api.post('/api/token', params, {
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
             });
 
             const { access_token } = tokenResponse.data;
 
             if (!access_token) {
-                throw new Error("Server did not return a token.");
+                throw new Error("Server did not return access_token");
             }
 
-            // --- Step B: Save Token Immediately ---
-            // Taaki agle request me ye header me lag ke jaye
-            this.setToken(access_token);
+            // ✅ Save token
+            this.setToken(access_token, rememberMe);
 
-            // --- Step C: Fetch User Profile (For Role) ---
-            const userResponse = await api.get('/api/users/me/');
+            // ✅ Fetch and save profile
+            const userResponse = await api.get('/api/profile/');
             const user = userResponse.data;
 
-            // --- Step D: Save User & Return ---
-            this.setUser(user);
+            this.setUser(user, rememberMe);
 
             return {
                 success: true,
                 access_token,
-                user
+                user,
             };
-
         } catch (error) {
-            // Agar beech me kuch fail ho jaye, to safai karo
             this.logout();
             console.error("Login Flow Failed:", error.response?.data || error.message);
-            throw error; // UI ko error dikhane ke liye fek do
-        }
-    },
-
-    /**
-     * 2. REGISTER (Updated for Public Access)
-     * * OLD: /api/users/ (Locked for Admins ❌)
-     * NEW: /api/public/register (Open for everyone ✅)
-     */
-    async register(userData) {
-        try {
-            // 👇 YAHAN CHANGE KIYA HAI
-            const response = await api.post('/api/public/register', userData);
-            return response.data;
-        } catch (error) {
-            console.error("Registration Error:", error.response?.data);
             throw error;
         }
     },
 
     /**
-     * 3. LOGOUT
-     * Sab kuch clear kar deta hai
+     * 🟢 REGISTRATION
      */
-    logout() {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-        // Optional: Reload page to clear memory states
-        // window.location.reload(); 
+    async register(userData) {
+        try {
+            const response = await api.post('/api/public/register', userData);
+            return response.data;
+        } catch (error) {
+            console.error("Registration Error:", error.response?.data || error.message);
+            throw error;
+        }
     },
 
-    // --- STORAGE HELPERS (Getters & Setters) ---
+    /**
+     * 🟢 LOGOUT (Clears everything)
+     */
+    logout() {
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+        sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+        sessionStorage.removeItem(USER_KEY);
+    },
 
-    setToken(token) {
-        localStorage.setItem(TOKEN_KEY, token);
+    /**
+     * 🟢 TOKEN MANAGEMENT
+     */
+    setToken(token, rememberMe = true) {
+        if (!token) return;
+        if (rememberMe) {
+            localStorage.setItem(ACCESS_TOKEN_KEY, token);
+            sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+        } else {
+            sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
+            localStorage.removeItem(ACCESS_TOKEN_KEY);
+        }
     },
 
     getToken() {
-        return localStorage.getItem(TOKEN_KEY);
+        return (
+            localStorage.getItem(ACCESS_TOKEN_KEY) ||
+            sessionStorage.getItem(ACCESS_TOKEN_KEY)
+        );
     },
 
-    setUser(user) {
-        // Object ko string banakar save karo
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
+    /**
+     * 🟢 USER DATA MANAGEMENT
+     */
+    setUser(user, rememberMe = true) {
+        if (!user) return;
+        const userStr = JSON.stringify(user);
+        if (rememberMe) {
+            localStorage.setItem(USER_KEY, userStr);
+            sessionStorage.removeItem(USER_KEY);
+        } else {
+            sessionStorage.setItem(USER_KEY, userStr);
+            localStorage.removeItem(USER_KEY);
+        }
     },
 
     getUser() {
-        const userStr = localStorage.getItem(USER_KEY);
-        if (userStr) {
-            try {
-                return JSON.parse(userStr);
-            } catch (e) {
-                return null;
-            }
+        const userStr = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY);
+        if (!userStr || userStr === "undefined") return null;
+
+        try {
+            return JSON.parse(userStr);
+        } catch (e) {
+            console.error("Error parsing user data", e);
+            return null;
         }
-        return null;
     },
 
-    // Helper: Check if user is Admin
+    /**
+     * 🟢 PERMISSION CHECKING
+     */
+    hasPermission(permissionCode) {
+        const user = this.getUser();
+        if (!user) return false;
+
+        const roleName = user.role?.name?.toLowerCase() || user.role?.toLowerCase() || '';
+
+        // Super Admin bypass
+        if (roleName === 'admin' || roleName === 'superadmin') return true;
+
+        return user.permissions?.includes(permissionCode) || false;
+    },
+
+    // 🟢 HELPER: Is Admin Check
     isAdmin() {
         const user = this.getUser();
         if (!user) return false;
-        
-        // Handle both Object {name: "Admin"} and String "Admin"
-        const role = user.role?.name || user.role;
-        return role === 'Admin' || role === 'SuperAdmin';
+        const roleName = user.role?.name?.toLowerCase() || user.role?.toLowerCase() || '';
+        return roleName === 'admin' || roleName === 'superadmin';
     }
 };
+
+// ✅ Default export added to prevent import errors
+export default authService;

@@ -33,3 +33,120 @@
 /* .management-table { ... } */
 /* .table-responsive { ... } */
 /* .tabs { ... } etc. */
+
+/* src/assets/css/ManagementPages.css */
+
+/* --- Container Layout --- */
+.management-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* --- Common Input Styles (Replaces Tailwind @apply) --- */
+.input-field {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 1rem; /* px-4 py-2 */
+  font-size: 0.875rem; /* text-sm */
+  line-height: 1.25rem;
+  color: #1f2937; /* text-gray-800 */
+  background-color: #fff;
+  border: 1px solid #d1d5db; /* border-gray-300 */
+  border-radius: 0.5rem; /* rounded-lg */
+  transition: all 0.2s;
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: #4f46e5; /* indigo-600 */
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2); /* ring effect */
+}
+
+.input-field:disabled {
+  background-color: #f3f4f6;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* --- Label Styles --- */
+.label-style {
+  display: block;
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6b7280; /* text-gray-500 */
+  margin-bottom: 0.375rem;
+  letter-spacing: 0.025em;
+}
+
+/* --- Button Styles --- */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1.5rem; /* px-6 py-2 */
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: white;
+  background-color: #4f46e5; /* indigo-600 */
+  border: none;
+  border-radius: 0.5rem; /* rounded-lg */
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #4338ca; /* indigo-700 */
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  background-color: #a5b4fc;
+  cursor: not-allowed;
+}
+
+/* --- Success/Error Messages --- */
+.error-message {
+  animation: slideIn 0.3s ease-out;
+}
+
+.success-message {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Table Styles (Optional Tweaks) --- */
+table th {
+  letter-spacing: 0.05em;
+}
+
+/* Scrollbar styling for tables */
+.overflow-x-auto::-webkit-scrollbar {
+  height: 8px;
+}
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: #f1f1f1; 
+}
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: #c7c7c7; 
+  border-radius: 4px;
+}
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8; 
+}

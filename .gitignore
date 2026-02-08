@@ -1,33 +1,93 @@
+####################################
 # Python
+####################################
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyd
 *.pyo
+*.log
 
-# Virtual environment
-venv/
-
-# VSCode settings
-.vscode/
-
-# Alembic migrations
-alembic/versions/
-# Virtual Environment
+####################################
+# Python Virtual Environments
+####################################
 venv/
 .venv/
 env/
+ENV/
 .env
+.env.*
+pip-wheel-metadata/
 
-# Python cache files
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+####################################
+# FastAPI / Alembic
+####################################
+alembic/versions/*.pyc
+alembic/versions/__pycache__/
 
-# IDE/Editor specific files
+####################################
+# Node / React / Vite
+####################################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+####################################
+# Frontend Environment Files
+####################################
+library-frontend/.env
+library-frontend/.env.*
+library-frontend/.env.production
+
+####################################
+# Build / Dist
+####################################
+dist/
+build/
+.out/
+.next/
+
+####################################
+# Backend Static / User Uploads (DO NOT COMMIT)
+####################################
+library_backend/static/
+library_backend/media/
+library_backend/uploads/
+library_backend/static/uploads/
+library_backend/static/images/
+library_backend/static/pdfs/
+library_backend/static/donation/
+library_backend/static/covers/
+
+####################################
+# Databases / Secrets
+####################################
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key
+
+####################################
+# OS Files
+####################################
+.DS_Store
+Thumbs.db
+desktop.ini
+
+####################################
+# IDE / Editor
+####################################
 .vscode/
 .idea/
 *.swp
+*.swo
+*.tmp
 
-# OS-specific files
-.DS_Store
-Thumbs.db
+####################################
+# Misc
+####################################
+python_installer.exe
+coverage/
+htmlcov/

@@ -3,19 +3,25 @@ import apiClient from './apiClient';
 export const bookService = {
 
     // ============================================================
-    // 1. BOOK MANAGEMENT (Public & Admin)
+    // 1. BOOK MANAGEMENT
     // ============================================================
 
     /**
      * Fetches all books.
-     * @param {Object} queryParams - Defaults to approved_only: true
+     * Supports both Public (isApproved=true) and Admin (queryParams object).
      */
-    async getAllBooks(queryParams = { approved_only: true }) {
+    async getAllBooks(queryParams = {}) {
         try {
-            // FIX: params ko ek object wrapper { params: queryParams } mein bhejhein
-            // Isse "target must be an object" ka error khatam ho jayega
-            const response = await apiClient.get('/api/books/', { 
-                params: queryParams 
+            let configParams = queryParams;
+
+            // ✅ FIX: Agar koi sirf 'true' bhej raha hai, to usse object bana do
+            // Taake Admin panel ka filter bhi chale aur Public side bhi crash na ho.
+            if (queryParams === true) {
+                configParams = { is_approved: true };
+            }
+
+            const response = await apiClient.get('/api/books?approved_only=true', { 
+                params: configParams 
             });
             return response.data;
         } catch (error) {
@@ -24,9 +30,6 @@ export const bookService = {
         }
     },
 
-    /**
-     * Fetches a single book by ID.
-     */
     async getBookById(bookId) {
         try {
             const response = await apiClient.get(`/api/books/${bookId}/`);
@@ -36,11 +39,7 @@ export const bookService = {
             throw error;
         }
     },
-    
 
-    /**
-     * Create a new book (FormData support for Image/PDF).
-     */
     async createBook(formData) {
         try {
             const response = await apiClient.post('/api/books/', formData, {
@@ -53,12 +52,9 @@ export const bookService = {
         }
     },
 
-    /**
-     * Update an existing book.
-     */
     async updateBook(bookId, formData) {
         try {
-            const response = await apiClient.put(`/api/books/${bookId}`, formData, {
+            const response = await apiClient.put(`/api/books/${bookId}/`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
             return response.data;
@@ -67,15 +63,7 @@ export const bookService = {
             throw error;
         }
     },
-    // Kisi specific book ki request status check karne ke liye
-checkAccessStatus: async (bookId, whatsapp) => {
-    const response = await axios.get(`http://127.0.0.1:8000/api/restricted-requests/check?book_id=${bookId}&whatsapp=${whatsapp}`);
-    return response.data; // Yeh status 'pending', 'approved', ya 'rejected' dega
-},
 
-    /**
-     * Delete a book.
-     */
     async deleteBook(bookId) {
         try {
             const response = await apiClient.delete(`/api/books/${bookId}/`);
@@ -87,7 +75,7 @@ checkAccessStatus: async (bookId, whatsapp) => {
     },
 
     // ============================================================
-    // 2. METADATA (Languages & Categories)
+    // 2. METADATA & LISTS
     // ============================================================
 
     async getAllLanguages() {
@@ -95,7 +83,6 @@ checkAccessStatus: async (bookId, whatsapp) => {
             const response = await apiClient.get('/api/languages/');
             return response.data;
         } catch (error) {
-            console.error("Error fetching languages:", error);
             return [];
         }
     },
@@ -105,13 +92,12 @@ checkAccessStatus: async (bookId, whatsapp) => {
             const response = await apiClient.get('/api/subcategories/');
             return response.data;
         } catch (error) {
-            console.error("Error fetching subcategories:", error);
             return [];
         }
     },
 
     // ============================================================
-    // 3. REQUESTS & ACCESS WORKFLOW
+    // 3. REQUESTS & AUTHENTICATION SAFEGUARDS
     // ============================================================
 
     async createApprovalRequest(bookId) {
@@ -134,11 +120,24 @@ checkAccessStatus: async (bookId, whatsapp) => {
         }
     },
 
+    // ✅ FIX: 401 Unauthorized Error rokne ke liye
     async getMyRequests() {
         try {
+            // Check if token exists before calling API
+            const token = localStorage.getItem('access_token'); // Ya jo bhi aap key use kar rahe hain
+            
+            if (!token) {
+                // Agar user login nahi hai, to API call mat karo, empty list wapas kardo
+                return [];
+            }
+
             const response = await apiClient.get('/api/requests/access/my-requests/');
             return response.data;
         } catch (error) {
+            // Agar 401 aye to console me shor na machaye, bas empty array de de
+            if (error.response && error.response.status === 401) {
+                return [];
+            }
             console.error("Error fetching my requests:", error);
             return [];
         }

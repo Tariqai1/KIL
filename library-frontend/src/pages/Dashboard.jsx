@@ -1,299 +1,403 @@
-// src/pages/Dashboard.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import useAuth from '../hooks/useAuth';
+import { Link, useNavigate } from 'react-router-dom';
+import useAuth from '../hooks/useAuth'; // Ensure this hook provides permissions
+import toast from 'react-hot-toast';
 
-// Import API services
+// --- Services ---
 import { bookService } from '../api/bookService';
 import { userService } from '../api/userService';
-import { approvalService } from '../api/approvalService';
+import restrictedBookService from "../api/restrictedBookService";
+
 import { copyIssueService } from '../api/copyIssueService';
 import { logService } from '../api/logService';
 
-// Import Icons
+// --- Icons ---
 import {
     BookOpenIcon, UsersIcon, ClockIcon, ArrowUpOnSquareIcon,
-    ListBulletIcon, PresentationChartLineIcon, ChartPieIcon, ArrowPathIcon
+    ListBulletIcon, PresentationChartLineIcon, ChartPieIcon, ArrowPathIcon,
+    ShieldCheckIcon, PlusCircleIcon, QueueListIcon, CheckCircleIcon,
+    ExclamationCircleIcon
 } from '@heroicons/react/24/outline';
 
-// Import Recharts components
+// --- Charts ---
 import {
     LineChart, Line, PieChart, Pie, Cell,
-    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
 
-// Import Skeleton Loading
+// --- Loading Skeleton ---
 import Skeleton, { SkeletonTheme } from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
-// Animation Variants
-const cardVariants = {
+// --- Animation Config ---
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
+};
+
+const itemVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: (i = 0) => ({
-        opacity: 1, y: 0,
-        transition: { delay: i * 0.1, duration: 0.4, ease: "easeOut" }
-    }),
-};
-const sectionVariants = {
-     hidden: { opacity: 0 },
-     visible: { opacity: 1, transition: { staggerChildren: 0.1, delayChildren: 0.2 } },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
 };
 
-// --- Helper: Stat Card Component ---
-const StatCard = ({ icon: Icon, title, value, bgColor, index, isLoading }) => (
+// ==========================================
+// 1. HELPER COMPONENTS
+// ==========================================
+
+const StatCard = ({ icon: Icon, title, value, subtext, colorClass, loading, onClick, delay }) => (
     <motion.div
-        custom={index} variants={cardVariants}
-        // Removed the relative positioning if only used for the circle
-        className={`p-5 rounded-lg shadow-lg ${bgColor} text-white flex items-start space-x-4 overflow-hidden min-h-[110px]`}
+        variants={itemVariants}
+        whileHover={{ y: -5, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
+        onClick={onClick}
+        className={`relative overflow-hidden p-6 rounded-2xl border border-slate-100 bg-white cursor-pointer transition-all group`}
     >
-        {/* --- FIX: Removed the absolute positioned decorative circle div --- */}
-        {/* <div className="absolute -top-4 -right-4 w-20 h-20 bg-white bg-opacity-10 rounded-full"></div> */}
-
-        {/* Icon */}
-        <div className="flex-shrink-0 bg-black bg-opacity-25 rounded-full p-3"> {/* Removed z-10 as it might not be needed now */}
-            {isLoading ? <Skeleton circle height={24} width={24} baseColor="#ffffff50" highlightColor="#ffffff80" /> : <Icon className="h-6 w-6 text-white" aria-hidden="true" />}
-        </div>
-        {/* Text Content */}
-        <div> {/* Removed z-10 */}
-            <p className="text-sm font-medium uppercase tracking-wider opacity-90">{title}</p>
-            {isLoading || value === null ? (
-                 <Skeleton height={30} width={80} baseColor="#ffffff50" highlightColor="#ffffff80" containerClassName="mt-1" />
-            ) : (
-                 <p className="text-3xl font-bold">{value}</p>
-            )}
+        {/* Abstract Background Shape */}
+        <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-10 transition-transform group-hover:scale-150 ${colorClass.bgShape}`}></div>
+        
+        <div className="relative z-10 flex justify-between items-start">
+            <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{title}</p>
+                {loading ? (
+                    <Skeleton width={80} height={36} />
+                ) : (
+                    <h3 className="text-3xl font-black text-slate-800 tracking-tight">{value}</h3>
+                )}
+                {subtext && <p className={`text-xs mt-2 font-semibold ${colorClass.subtext}`}>{subtext}</p>}
+            </div>
+            <div className={`p-3 rounded-xl shadow-sm ${colorClass.bg} ${colorClass.text}`}>
+                <Icon className="w-6 h-6" />
+            </div>
         </div>
     </motion.div>
 );
 
-// --- Initial Chart Data ---
-// Define the structure and initial state for clarity
-const initialBooksAddedData = [
-    { month: 'Jan', count: 0 }, { month: 'Feb', count: 0 }, { month: 'Mar', count: 0 },
-    { month: 'Apr', count: 0 }, { month: 'May', count: 0 }, { month: 'Jun', count: 0 },
-    { month: 'Jul', count: 0 }, { month: 'Aug', count: 0 }, { month: 'Sep', count: 0 },
-    { month: 'Oct', count: 0 }, { month: 'Nov', count: 0 }, { month: 'Dec', count: 0 },
-];
-const initialBookStatusData = [ { name: 'Approved', value: 0 }, { name: 'Pending', value: 0 }];
-const STATUS_COLORS = ['#10B981', '#F59E0B']; // Emerald, Amber
+const QuickAction = ({ to, icon: Icon, label, color, permission, userPermissions, role }) => {
+    // Permission Check
+    const hasAccess = !permission || 
+                      role === 'admin' || 
+                      role === 'superadmin' || 
+                      userPermissions?.includes(permission);
 
-// --- Main Dashboard Component ---
+    if (!hasAccess) return null;
+
+    return (
+        <Link to={to} className="group flex flex-col items-center justify-center p-5 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md hover:border-indigo-100 transition-all">
+            <div className={`p-3.5 rounded-full ${color} text-white mb-3 group-hover:scale-110 group-hover:rotate-3 transition-transform shadow-md`}>
+                <Icon className="w-6 h-6" />
+            </div>
+            <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-600 uppercase tracking-wide text-center">{label}</span>
+        </Link>
+    );
+};
+
+// ==========================================
+// 2. MAIN DASHBOARD COMPONENT
+// ==========================================
+
 const Dashboard = () => {
-    const { role } = useAuth();
-    const [stats, setStats] = useState({ totalBooks: null, activeUsers: null, pendingApprovals: null, booksOnLoan: null });
-    const [recentLogs, setRecentLogs] = useState([]);
-    const [booksAddedChartData, setBooksAddedChartData] = useState([]); // Start empty for loading
-    const [bookStatusChartData, setBookStatusChartData] = useState([]); // Start empty for loading
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const { user } = useAuth();
+    const navigate = useNavigate();
+    
+    // Auth & Permissions
+    const role = user?.role?.name?.toLowerCase() || user?.role?.toLowerCase() || '';
+    const permissions = user?.permissions || [];
 
-    // --- Data Fetching Logic ---
+    // --- State ---
+    const [stats, setStats] = useState({
+        totalBooks: 0,
+        activeUsers: 0,
+        pendingRequests: 0,
+        booksOnLoan: 0,
+        totalCopies: 0
+    });
+    
+    const [chartData, setChartData] = useState({ added: [], status: [] });
+    const [recentLogs, setRecentLogs] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [lastUpdated, setLastUpdated] = useState(null);
+
+    // --- Permission Helper ---
+    const hasPermission = (perm) => {
+        if (role === 'admin' || role === 'superadmin') return true;
+        return permissions.includes(perm);
+    };
+
+    // --- Fetch Logic ---
     const fetchDashboardData = useCallback(async () => {
         setIsLoading(true);
-        setError(null);
-        setStats({ totalBooks: null, activeUsers: null, pendingApprovals: null, booksOnLoan: null });
-        setRecentLogs([]);
-        setBooksAddedChartData([]);
-        setBookStatusChartData([]);
+        const loadStartTime = Date.now();
 
         try {
-            const [booksRes, usersRes, requestsRes, issuesRes, logsRes] = await Promise.allSettled([
-                bookService.getAllBooks(false),
-                userService.getAllUsers(),
-                approvalService.getAllRequests(),
-                copyIssueService.getAllIssues(),
-                logService.getRecentLogs(5)
-            ]);
+            // Define promises based on permissions to save bandwidth
+            const promises = [
+                hasPermission('BOOK_VIEW') ? bookService.getAllBooks(false) : Promise.resolve([]),
+                hasPermission('USER_VIEW') ? userService.getAllUsers() : Promise.resolve([]),
+                hasPermission('REQUEST_VIEW') ? restrictedBookService.getAllRequests() : Promise.resolve([]),
+                hasPermission('BOOK_ISSUE') ? copyIssueService.getAllIssues() : Promise.resolve([]),
+                hasPermission('LOGS_VIEW') ? logService.getRecentLogs(5) : Promise.resolve([])
+            ];
 
-            // Calculate Stats & Process Chart Data
-            let totalBooks = 0, approvedBooks = 0, pendingBooks = 0;
-            const monthlyCounts = initialBooksAddedData.reduce((acc, item) => { acc[item.month] = 0; return acc; }, {}); // Initialize counts
+            const results = await Promise.allSettled(promises);
 
-            if (booksRes.status === 'fulfilled' && booksRes.value) {
-                totalBooks = booksRes.value.length;
-                booksRes.value.forEach(book => {
-                    if(book.is_approved) approvedBooks++; else pendingBooks++;
-                    // Process for Books Added Chart
-                    try {
-                        // Ensure created_at exists and is a valid date string
-                        if (book.created_at) {
-                           const month = new Date(book.created_at).toLocaleString('default', { month: 'short' });
-                           if (monthlyCounts.hasOwnProperty(month)) { // Only count if month is valid key
-                              monthlyCounts[month] = (monthlyCounts[month] || 0) + 1;
-                           }
-                        }
-                    } catch (dateError) {
-                        console.warn(`Could not parse date for book ID ${book.id}:`, dateError);
-                    }
-                });
-                // Convert processed counts back to chart format array
-                const processedChartData = initialBooksAddedData.map(item => ({
-                    ...item,
-                    count: monthlyCounts[item.month] || 0 // Use count or 0
-                }));
-                setBooksAddedChartData(processedChartData);
+            // Helper to safely get value
+            const getValue = (idx) => (results[idx].status === 'fulfilled' ? results[idx].value : []);
 
-            } else {
-                 console.error("Failed to load books for stats/charts:", booksRes.reason);
-                 setBooksAddedChartData(initialBooksAddedData); // Fallback to initial structure with 0s
-            }
-            // Set Book Status Chart Data
-             setBookStatusChartData([
-                 { name: 'Approved', value: approvedBooks },
-                 { name: 'Pending', value: pendingBooks },
-             ]);
+            const books = getValue(0);
+            const users = getValue(1);
+            const requests = getValue(2);
+            const issues = getValue(3);
+            const logs = getValue(4);
 
+            // 1. Process Stats
+            setStats({
+                totalBooks: books.length,
+                activeUsers: users.filter(u => u.status !== 'banned' && u.status !== 'Deleted').length,
+                pendingRequests: requests.filter(r => r.status === 'pending').length,
+                booksOnLoan: issues.filter(i => i.status === 'issued').length
+            });
 
-            const activeUsers = usersRes.status === 'fulfilled' ? (usersRes.value || []).filter(user => user.status === 'Active').length : 0;
-            const pendingApprovals = requestsRes.status === 'fulfilled' ? (requestsRes.value || []).filter(req => req.status === 'Pending').length : 0;
-            const booksOnLoan = issuesRes.status === 'fulfilled' ? (issuesRes.value || []).filter(issue => issue.status?.toLowerCase() === 'issued').length : 0;
-            setStats({ totalBooks, activeUsers, pendingApprovals, booksOnLoan });
+            // 2. Process Line Chart (Growth)
+            const monthlyData = Array(12).fill(0);
+            books.forEach(book => {
+                if (book.created_at) {
+                    const d = new Date(book.created_at);
+                    if (!isNaN(d.getTime())) monthlyData[d.getMonth()]++;
+                }
+            });
+            
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const lineData = months.map((m, i) => ({ name: m, books: monthlyData[i] }));
 
+            // 3. Process Pie Chart (Requests)
+            const approved = requests.filter(r => r.status === 'approved').length;
+            const pending = requests.filter(r => r.status === 'pending').length;
+            const rejected = requests.filter(r => r.status === 'rejected').length;
 
-            // Process Recent Logs
-            if (logsRes.status === 'fulfilled' && logsRes.value) {
-                setRecentLogs(logsRes.value.map(log => ({
-                    id: log.id,
-                    user: log.action_by?.username || 'System',
-                    action: log.action_type || 'UNKNOWN',
-                    description: log.description || 'No description',
-                    time: log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : 'Invalid date'
-                })).slice(0, 5));
-            } else {
-                 console.error("Failed to load logs:", logsRes.reason);
-                 // No fallback dummy data, show empty state
-            }
-             // Handle potential errors for other fetches if needed
-             if (usersRes.status === 'rejected') console.error("Failed to load users:", usersRes.reason);
-             if (requestsRes.status === 'rejected') console.error("Failed to load requests:", requestsRes.reason);
-             if (issuesRes.status === 'rejected') console.error("Failed to load issues:", issuesRes.reason);
+            setChartData({
+                added: lineData,
+                status: [
+                    { name: 'Approved', value: approved, color: '#10B981' },
+                    { name: 'Pending', value: pending, color: '#F59E0B' },
+                    { name: 'Rejected', value: rejected, color: '#EF4444' }
+                ]
+            });
 
+            // 4. Logs
+            setRecentLogs(logs);
+            setLastUpdated(new Date());
 
-        } catch (err) { // Catch unexpected errors
-            console.error("Error fetching dashboard data:", err);
-            setError(err.message || "Could not load dashboard data. Please try refreshing.");
-            setStats({ totalBooks: 0, activeUsers: 0, pendingApprovals: 0, booksOnLoan: 0 });
-            // --- FIX: Use correct state setter and initial data variable ---
-            setBooksAddedChartData(initialBooksAddedData); // Use initial structure on error
-            setBookStatusChartData(initialBookStatusData); // Use initial structure on error
-            // setRecentLogs(recentActivityData); // No dummy fallback for logs
-            // --- END FIX ---
+        } catch (err) {
+            console.error("Dashboard Load Error:", err);
+            toast.error("Partial data load failed.");
         } finally {
+            // Min loading time for smooth UX
+            const elapsed = Date.now() - loadStartTime;
+            if (elapsed < 500) await new Promise(r => setTimeout(r, 500 - elapsed));
             setIsLoading(false);
         }
-    }, []); // Empty dependency array
+    }, [role, permissions]); // Dependency on role/perms
 
     useEffect(() => {
         fetchDashboardData();
     }, [fetchDashboardData]);
 
-    // --- JSX Rendering (No changes needed below this line) ---
+    // --- Chart Colors ---
+    const PIE_COLORS = ['#10B981', '#F59E0B', '#EF4444'];
+
     return (
-        <SkeletonTheme baseColor="#e0e0e0" highlightColor="#f5f5f5">
-            <motion.div
-                variants={sectionVariants} initial="hidden" animate="visible"
-                className="p-4 md:p-6 space-y-6"
+        <SkeletonTheme baseColor="#f1f5f9" highlightColor="#e2e8f0">
+            <motion.div 
+                variants={containerVariants} 
+                initial="hidden" 
+                animate="visible"
+                className="p-4 md:p-8 space-y-8 bg-[#f8fafc] min-h-screen font-sans"
             >
-                {/* Header with Refresh Button */}
-                 <div className="flex justify-between items-center">
-                    <h2 className="text-2xl md:text-3xl font-semibold text-gray-700">🏠 Dashboard</h2>
-                    <button
-                        onClick={fetchDashboardData} disabled={isLoading}
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                        title="Refresh Data"
+                {/* --- Header --- */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-6">
+                    <div>
+                        <h1 className="text-3xl font-black text-slate-800 tracking-tight">Overview</h1>
+                        <p className="text-slate-500 font-medium mt-1">
+                            Welcome back, <span className="text-indigo-600 font-bold">{user?.username || 'Admin'}</span>.
+                            {lastUpdated && <span className="text-xs ml-2 text-slate-400 font-normal">Updated: {lastUpdated.toLocaleTimeString()}</span>}
+                        </p>
+                    </div>
+                    <button 
+                        onClick={fetchDashboardData} 
+                        disabled={isLoading}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm font-bold text-sm active:scale-95 disabled:opacity-50"
                     >
-                        <ArrowPathIcon className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                        <ArrowPathIcon className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                        Refresh Data
                     </button>
-                 </div>
+                </div>
 
-                {error && <p className="error-message p-3 bg-red-100 border border-red-300 text-red-700 text-sm rounded-md text-center">{error}</p>}
+                {/* --- 1. Stats Grid (Dynamic Permissions) --- */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Everyone sees Total Books */}
+                    <StatCard 
+                        icon={BookOpenIcon} title="Library Collection" value={stats.totalBooks} subtext="Total Books Available"
+                        colorClass={{ bg: 'bg-indigo-50 text-indigo-600', subtext: 'text-indigo-500', bgShape: 'bg-indigo-500' }}
+                        loading={isLoading} onClick={() => navigate('/admin/books')}
+                    />
 
-                {/* Welcome Message */}
-                <motion.div variants={cardVariants} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                    {/* ... Welcome message content ... */}
-                     <h3 className="text-xl font-medium text-gray-800 mb-2">Welcome back!</h3>
-                     <p className="text-gray-600">Here's a quick overview of the library status.</p>
-                     <p className="mt-4 text-sm text-indigo-600">Your role: <strong className="font-semibold">{isLoading ? <Skeleton width={60} inline/> : role || 'N/A'}</strong></p>
+                    {/* Access Requests (Only if permitted) */}
+                    {hasPermission('REQUEST_VIEW') && (
+                        <StatCard 
+                            icon={ShieldCheckIcon} title="Access Requests" value={stats.pendingRequests} subtext="Pending Approval"
+                            colorClass={{ bg: 'bg-amber-50 text-amber-600', subtext: 'text-amber-500', bgShape: 'bg-amber-500' }}
+                            loading={isLoading} onClick={() => navigate('/admin/access-requests')}
+                        />
+                    )}
+
+                    {/* Active Loans (Only if permitted) */}
+                    {hasPermission('BOOK_ISSUE') && (
+                        <StatCard 
+                            icon={ArrowUpOnSquareIcon} title="Circulation" value={stats.booksOnLoan} subtext="Books Currently Issued"
+                            colorClass={{ bg: 'bg-purple-50 text-purple-600', subtext: 'text-purple-500', bgShape: 'bg-purple-500' }}
+                            loading={isLoading} onClick={() => navigate('/admin/copies')}
+                        />
+                    )}
+
+                    {/* Total Users (Only if permitted) */}
+                    {hasPermission('USER_VIEW') && (
+                        <StatCard 
+                            icon={UsersIcon} title="User Base" value={stats.activeUsers} subtext="Active Accounts"
+                            colorClass={{ bg: 'bg-emerald-50 text-emerald-600', subtext: 'text-emerald-500', bgShape: 'bg-emerald-500' }}
+                            loading={isLoading} onClick={() => navigate('/admin/users')}
+                        />
+                    )}
+                </div>
+
+                {/* --- 2. Quick Actions --- */}
+                <motion.div variants={itemVariants}>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Quick Actions</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <QuickAction to="/admin/books/add" icon={PlusCircleIcon} label="Add Book" color="bg-indigo-600" permission="BOOK_MANAGE" role={role} userPermissions={permissions} />
+                        <QuickAction to="/admin/access-requests" icon={ShieldCheckIcon} label="Approvals" color="bg-amber-500" permission="REQUEST_MANAGE" role={role} userPermissions={permissions} />
+                        <QuickAction to="/admin/copies" icon={QueueListIcon} label="Issue Book" color="bg-purple-600" permission="BOOK_ISSUE" role={role} userPermissions={permissions} />
+                        <QuickAction to="/admin/logs" icon={ListBulletIcon} label="System Logs" color="bg-slate-600" permission="LOGS_VIEW" role={role} userPermissions={permissions} />
+                    </div>
                 </motion.div>
 
-                {/* Stats Cards Grid */}
-                <motion.div variants={sectionVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                    <StatCard index={1} icon={BookOpenIcon} title="Total Books" value={stats.totalBooks} bgColor="bg-gradient-to-br from-blue-500 to-indigo-600" isLoading={isLoading} />
-                    <StatCard index={2} icon={UsersIcon} title="Active Users" value={stats.activeUsers} bgColor="bg-gradient-to-br from-green-500 to-emerald-600" isLoading={isLoading} />
-                    <StatCard index={3} icon={ClockIcon} title="Pending Approvals" value={stats.pendingApprovals} bgColor="bg-gradient-to-br from-amber-500 to-orange-600" isLoading={isLoading} />
-                    <StatCard index={4} icon={ArrowUpOnSquareIcon} title="Books on Loan" value={stats.booksOnLoan} bgColor="bg-gradient-to-br from-purple-500 to-violet-600" isLoading={isLoading} />
-                </motion.div>
+                {/* --- 3. Analytics & Charts --- */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    {/* Line Chart */}
+                    <motion.div variants={itemVariants} className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <PresentationChartLineIcon className="w-5 h-5 text-indigo-500" />
+                                Collection Growth
+                            </h3>
+                            <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md font-bold">This Year</span>
+                        </div>
+                        <div className="h-[300px] w-full">
+                            {isLoading ? <Skeleton height="100%" /> : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData.added}>
+                                        <defs>
+                                            <linearGradient id="colorBooks" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
+                                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} />
+                                        <Area type="monotone" dataKey="books" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorBooks)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            )}
+                        </div>
+                    </motion.div>
 
-                 {/* Charts and Recent Activity Grid */}
-                 <motion.div variants={sectionVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Pie Chart (Conditional Render if Permitted) */}
+                    {hasPermission('REQUEST_VIEW') && (
+                        <motion.div variants={itemVariants} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-2">
+                                <ChartPieIcon className="w-5 h-5 text-emerald-500" />
+                                Request Distribution
+                            </h3>
+                            <div className="flex-1 min-h-[250px] relative">
+                                {isLoading ? <Skeleton height="100%" /> : (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={chartData.status}
+                                                innerRadius={65}
+                                                outerRadius={85}
+                                                paddingAngle={5}
+                                                dataKey="value"
+                                            >
+                                                {chartData.status.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip />
+                                            <Legend verticalAlign="bottom" height={36} iconType="circle"/>
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                )}
+                                {/* Center Text Overlay */}
+                                {!isLoading && (
+                                    <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none pb-8">
+                                        <span className="text-3xl font-black text-slate-800">
+                                            {chartData.status.reduce((a, b) => a + b.value, 0)}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total</span>
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    )}
+                </div>
 
-                     {/* Books Added Chart */}
-                     <motion.div variants={cardVariants} className="lg:col-span-2 bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-                         <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                             <PresentationChartLineIcon className="h-5 w-5 mr-2 text-indigo-600" />
-                             Books Added Over Time (Demo Data) {/* Update Title if using real data */}
-                         </h3>
-                         {isLoading ? ( <Skeleton height={300} borderRadius="0.5rem"/> ) : (
-                             <ResponsiveContainer width="100%" height={300}>
-                                 <LineChart data={booksAddedChartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                                     {/* ... LineChart components ... */}
-                                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                                      <XAxis dataKey="month" stroke="#6b7280" fontSize={12} />
-                                      <YAxis stroke="#6b7280" fontSize={12} allowDecimals={false} />
-                                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e0e0e0', borderRadius: '4px' }} />
-                                      <Legend wrapperStyle={{ fontSize: '12px' }}/>
-                                      <Line type="monotone" dataKey="count" stroke="#4f46e5" strokeWidth={2} activeDot={{ r: 6 }} name="Books Added" />
-                                 </LineChart>
-                             </ResponsiveContainer>
-                         )}
-                     </motion.div>
-
-                     {/* Recent Activity Feed */}
-                     <motion.div variants={cardVariants} className="lg:col-span-1 bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-                         <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                             <ListBulletIcon className="h-5 w-5 mr-2 text-indigo-600" />
-                             Recent Activity
-                         </h3>
-                         {isLoading ? ( <Skeleton count={5} height={40} borderRadius="0.375rem" containerClassName="space-y-3"/> ) : (
-                             <ul className="divide-y divide-gray-200 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                {recentLogs.length > 0 ? recentLogs.map((log) => (
-                                    <li key={log.id} className="py-3">
-                                        <p className="text-sm font-medium text-gray-800 truncate" title={log.description}>{log.description}</p>
-                                        <p className="text-xs text-gray-500"> By: <span className="font-medium">{log.user}</span> - {log.time} [{log.action}] </p>
-                                    </li>
-                                 )) : ( <p className="text-sm text-gray-500 text-center py-4">No recent activity logged.</p> )}
-                             </ul>
-                         )}
-                     </motion.div>
-
-                     {/* Book Status Pie Chart */}
-                     <motion.div variants={cardVariants} className="lg:col-span-1 bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-                        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                            <ChartPieIcon className="h-5 w-5 mr-2 text-indigo-600" />
-                            Books by Status
-                        </h3>
-                         {isLoading ? ( <Skeleton height={300} borderRadius="0.5rem"/> ) : (
-                            <ResponsiveContainer width="100%" height={300}>
-                                <PieChart>
-                                    <Pie
-                                        data={bookStatusChartData} cx="50%" cy="50%"
-                                        labelLine={false} outerRadius={80} fill="#8884d8" dataKey="value"
-                                        label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                                        fontSize={12}
-                                    >
-                                        {bookStatusChartData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip formatter={(value, name) => [value, name]}/>
-                                     <Legend wrapperStyle={{ fontSize: '12px' }}/>
-                                </PieChart>
-                            </ResponsiveContainer>
-                         )}
-                     </motion.div>
-
-                 </motion.div> {/* End Charts/Activity Grid */}
-
-            </motion.div> // End Main Container
+                {/* --- 4. Recent Logs (Conditional) --- */}
+                {hasPermission('LOGS_VIEW') && (
+                    <motion.div variants={itemVariants} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <ListBulletIcon className="w-5 h-5 text-slate-500" />
+                                Recent System Activity
+                            </h3>
+                            <Link to="/admin/logs" className="text-xs font-bold text-indigo-600 hover:text-indigo-800">View All</Link>
+                        </div>
+                        <div className="p-0">
+                            {isLoading ? (
+                                <div className="p-6"><Skeleton count={3} height={50} /></div>
+                            ) : recentLogs.length > 0 ? (
+                                <div className="divide-y divide-slate-100">
+                                    {recentLogs.map((log) => (
+                                        <div key={log.id} className="p-4 hover:bg-slate-50 transition-colors flex items-start gap-4">
+                                            <div className="mt-1 w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[10px] tracking-wide border border-slate-200 uppercase">
+                                                {log.action_type ? log.action_type.substring(0, 2) : 'SY'}
+                                            </div>
+                                            <div className="flex-1">
+                                                <p className="text-sm font-semibold text-slate-700">{log.description}</p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full">
+                                                        {log.action_by?.username || 'System'}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-400">
+                                                        {new Date(log.timestamp).toLocaleString()}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-12 text-center flex flex-col items-center">
+                                    <ClockIcon className="w-12 h-12 text-slate-200 mb-2" />
+                                    <p className="text-slate-400 font-medium">No recent activity found.</p>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </motion.div>
         </SkeletonTheme>
     );
 };

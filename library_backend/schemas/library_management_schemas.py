@@ -11,8 +11,8 @@ from . import user_schema
 # --- Location Schemas (Isi file me define kiye gaye) ---
 class LocationBase(BaseModel):
     name: str
-    room_name: Optional[str] = None
-    shelf_number: Optional[str] = None
+    rack: Optional[str] = None
+    shelf: Optional[str] = None
     section_name: Optional[str] = None
     description: Optional[str] = None
 

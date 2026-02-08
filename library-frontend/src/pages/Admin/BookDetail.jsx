@@ -3,10 +3,6 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import { bookService } from "../../api/bookService";
 import { getBookCover, getCoverUrl } from "../../utils/cover";
 
-// 👇 MAGIC IMPORT: Yahan bhi humne Master File bula li
-// Ab ye file bhi wahi 'Smart Logic' use karegi
- 
-
 // --- react-pdf-viewer Imports ---
 import { Viewer, Worker } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
@@ -30,8 +26,11 @@ const BookDetail = () => {
     const { id } = useParams();
     const location = useLocation();
 
-    // Navigation Logic (Admin se aaye to Admin pe wapas, User se aaye to User pe)
+    // ✅ SMART NAVIGATION LOGIC
+    // Check karein ke URL '/admin' se shuru ho raha hai ya nahi
     const isAdminPath = location.pathname.startsWith('/admin');
+    
+    // Agar Admin hai to '/admin/books', warna '/books'
     const backPath = isAdminPath ? "/admin/books" : "/books";
 
     const [book, setBook] = useState(null);
@@ -71,13 +70,17 @@ const BookDetail = () => {
         );
     }
 
+    // ✅ ERROR STATE FIX
+    // Pehle yahan Link hardcoded tha, ab 'backPath' use kar raha hai
     if (error) {
         return (
             <div className="p-8 text-center">
-                <div className="inline-block p-4 rounded-lg bg-red-50 text-red-600 border border-red-200">
-                    <h2 className="text-lg font-bold">Error</h2>
-                    <p>{error}</p>
-                    <Link to="/books" className="mt-4 inline-block text-blue-600 hover:underline">
+                <div className="inline-block p-6 rounded-2xl bg-red-50 text-red-600 border border-red-100 shadow-sm">
+                    <h2 className="text-lg font-bold mb-2">Error Loading Book</h2>
+                    <p className="text-sm">{error}</p>
+                    
+                    {/* 👇 THIS WAS THE BUG. FIXED NOW. */}
+                    <Link to={backPath} className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-white border border-red-200 rounded-lg text-red-700 hover:bg-red-50 font-bold text-sm transition-colors">
                         &larr; Return to Book List
                     </Link>
                 </div>
@@ -87,24 +90,21 @@ const BookDetail = () => {
 
     if (!book) return <div className="p-6 text-center text-lg">Book not found.</div>;
 
-    // --- 1. Get Cover URL (Using Master File) ---
-    // Ye function khud dekh lega ki 'cover_image' hai ya 'cover_image_url'
+    // --- Image & PDF Helpers ---
     const coverImageUrl = getBookCover(book);
-
-    // --- 2. Get PDF URL (Using Master File) ---
-    // PDF ke liye hum 'getCoverUrl' use kar rahe hain taaki '/static' aur Windows path fix ho jaye
-    // Hum dono fields check kar rahe hain 'pdf_url' ya 'pdf_file'
     const pdfUrl = getCoverUrl(book.pdf_url || book.pdf_file);
 
     return (
         <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+            {/* Back Button */}
             <Link 
                 to={backPath} 
-                className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors mb-4"
+                className="inline-flex items-center text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors mb-4 group"
             >
-                &larr; Back to Library
+                <span className="group-hover:-translate-x-1 transition-transform mr-1">&larr;</span> Back to Library
             </Link>
 
+            {/* Header Section */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900">{book.title}</h1>
@@ -113,19 +113,19 @@ const BookDetail = () => {
                     </p>
                 </div>
                 <div className="flex gap-2">
-                     <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full tracking-wide ${book.is_approved ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                     <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full tracking-wide ${book.is_approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                         {book.is_approved ? 'Approved' : 'Pending'}
                     </span>
-                    <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full tracking-wide ${book.is_restricted ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                    <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full tracking-wide ${book.is_restricted ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
                         {book.is_restricted ? 'Restricted' : 'Public'}
                     </span>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left Column: Cover & PDF Button */}
                 <div className="lg:col-span-1 space-y-6">
                     <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-200">
-                        {/* Image Logic Fixed */}
                         <img 
                             src={coverImageUrl} 
                             alt={book.title} 
@@ -136,26 +136,27 @@ const BookDetail = () => {
                             }}
                         />
                     </div>
-                    {/* PDF Logic Fixed */}
+                    
                     {pdfUrl && !pdfUrl.includes("No+Cover") ? (
                          <a 
                             href={pdfUrl} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="block w-full text-center px-4 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition shadow-sm"
+                            className="block w-full text-center px-4 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-500/30"
                         >
-                            Download / Open PDF
+                            Read / Download PDF
                         </a>
                     ) : (
-                        <div className="p-4 bg-gray-50 text-gray-500 text-center rounded-lg text-sm border border-gray-200">
+                        <div className="p-4 bg-slate-50 text-slate-400 text-center rounded-xl text-sm border border-dashed border-slate-300 font-medium">
                             No PDF Available
                         </div>
                     )}
                 </div>
 
-                <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                {/* Right Column: Metadata */}
+                <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-fit">
                     <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                        <h3 className="text-lg font-semibold text-gray-800">Book Information</h3>
+                        <h3 className="text-lg font-bold text-gray-800">Book Details</h3>
                     </div>
                     <div className="p-6">
                         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6">
@@ -190,7 +191,7 @@ const BookDetail = () => {
                     </div>
                     
                     <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-                        <div style={{ height: '800px' }} className="w-full bg-gray-100">
+                        <div style={{ height: '800px' }} className="w-full bg-slate-100">
                             <Viewer
                                 fileUrl={pdfUrl}
                                 plugins={[defaultLayoutPluginInstance]}

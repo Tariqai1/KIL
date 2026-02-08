@@ -1,91 +1,156 @@
-// src/components/layout/Sidebar.jsx
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { motion } from 'framer-motion';
-// Import icons from Heroicons (example)
-import {
-    HomeIcon, BookOpenIcon, UsersIcon, CheckBadgeIcon, TagIcon, FolderIcon, GlobeAltIcon, MapPinIcon,
-    KeyIcon, ShieldCheckIcon, DocumentTextIcon, ComputerDesktopIcon, QueueListIcon
-} from '@heroicons/react/24/outline'; // Use outline icons for a lighter look
-
-// Define navigation links with icons
-const navLinks = [
-    { to: "/", icon: HomeIcon, label: "Dashboard", end: true },
-    { to: "/books", icon: BookOpenIcon, label: "Book Management" },
-    { to: "/copies-issuing", icon: QueueListIcon, label: "Copies & Issuing" }, // Changed icon
-    { to: "/users", icon: UsersIcon, label: "User Management" },
-    { to: "/approvals", icon: CheckBadgeIcon, label: "Approvals" },
-    { type: 'divider', label: 'Configuration' },
-    { to: "/categories", icon: TagIcon, label: "Categories" },
-    { to: "/subcategories", icon: FolderIcon, label: "Subcategories" },
-    { to: "/languages", icon: GlobeAltIcon, label: "Languages" },
-    { to: "/locations", icon: MapPinIcon, label: "Locations" },
-    { type: 'divider', label: 'Security & Logs' },
-    { to: "/roles-permissions", icon: KeyIcon, label: "Roles & Permissions" },
-    { to: "/restricted-permissions", icon: ShieldCheckIcon, label: "Restricted Books" },
-    { to: "/audit-logs", icon: DocumentTextIcon, label: "Audit Logs" },
-    { to: "/digital-access", icon: ComputerDesktopIcon, label: "Digital Access" },
-];
-
-// Animation variants for list items
-const itemVariants = {
-    hidden: { x: -20, opacity: 0 },
-    visible: (i) => ({
-        x: 0,
-        opacity: 1,
-        transition: { delay: i * 0.04, duration: 0.25, ease: 'easeOut' } // Faster stagger
-    }),
-};
+import React, { useMemo } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import useAuth from '../../hooks/useAuth';
+import { 
+    HomeIcon, 
+    BookOpenIcon, 
+    UsersIcon, 
+    ShieldCheckIcon, 
+    ClipboardDocumentCheckIcon,
+    DocumentDuplicateIcon,
+    TagIcon,
+    LanguageIcon,
+    MapPinIcon,
+    LockClosedIcon,
+    ComputerDesktopIcon,
+    ClockIcon,
+    ArrowLeftOnRectangleIcon,
+    CheckBadgeIcon
+} from '@heroicons/react/24/outline';
 
 const Sidebar = () => {
+    const { user, logout } = useAuth();
+    const location = useLocation();
+    const navigate = useNavigate();
+
+    // --- Helper to check Permission ---
+    // Agar user Admin hai, to sab dikhao. Warna check karein.
+    const hasPermission = (permName) => {
+        if (!user) return false;
+        // Super Admin gets everything
+        if (user.role?.name?.toLowerCase() === 'admin' || user.role?.name?.toLowerCase() === 'superadmin') return true;
+        
+        // Check permissions array (backend se aani chahiye user object mein)
+        // Note: Ensure your login API returns permissions list inside 'user' object
+        return user.permissions?.includes(permName);
+    };
+
+    // --- Menu Configuration ---
+    const menuGroups = useMemo(() => [
+        {
+            title: "Overview",
+            items: [
+                { name: "Dashboard", path: "/admin/dashboard", icon: HomeIcon, requiredPerm: null }, // Everyone sees Dashboard
+                { name: "Access Requests", path: "/admin/access-requests", icon: LockClosedIcon, requiredPerm: "REQUEST_VIEW" },
+                { name: "Approvals", path: "/admin/approvals", icon: CheckBadgeIcon, requiredPerm: "BOOK_APPROVE" },
+            ]
+        },
+        {
+            title: "Library Management",
+            items: [
+                { name: "All Books", path: "/admin/books", icon: BookOpenIcon, requiredPerm: "BOOK_VIEW" },
+                { name: "Copies & Issuing", path: "/admin/copies", icon: DocumentDuplicateIcon, requiredPerm: "BOOK_ISSUE" },
+                { name: "Categories", path: "/admin/categories", icon: TagIcon, requiredPerm: "BOOK_MANAGE" },
+                { name: "Subcategories", path: "/admin/subcategories", icon: TagIcon, requiredPerm: "BOOK_MANAGE" },
+            ]
+        },
+        {
+            title: "Settings & Users",
+            items: [
+                { name: "Users Management", path: "/admin/users", icon: UsersIcon, requiredPerm: "USER_VIEW" },
+                { name: "Languages", path: "/admin/languages", icon: LanguageIcon, requiredPerm: "BOOK_MANAGE" },
+                { name: "Locations", path: "/admin/locations", icon: MapPinIcon, requiredPerm: "BOOK_MANAGE" },
+                { name: "Roles & Permissions", path: "/admin/roles-permissions", icon: ShieldCheckIcon, requiredPerm: "ROLE_VIEW" },
+            ]
+        },
+        {
+            title: "Security",
+            items: [
+                { name: "Restricted Books", path: "/admin/book-permissions", icon: LockClosedIcon, requiredPerm: "PERMISSION_VIEW" },
+                { name: "Digital Access", path: "/admin/digital-access-history", icon: ComputerDesktopIcon, requiredPerm: "LOGS_VIEW" },
+                { name: "Audit Logs", path: "/admin/logs", icon: ClockIcon, requiredPerm: "LOGS_VIEW" },
+            ]
+        }
+    ], [user]);
+
+    // --- Logout Handler ---
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
+
     return (
-        // Slightly wider, softer shadow, subtle gradient background possibility
-        <aside className="w-64 bg-gradient-to-b from-white to-gray-50 text-gray-800 shadow-lg flex flex-col flex-shrink-0 min-h-screen border-r border-gray-200">
-            {/* Header with more padding */}
-            <div className="h-20 flex items-center justify-center border-b border-gray-200">
-                <h1 className="text-2xl font-bold text-indigo-600 tracking-tight"> {/* Different color, tracking */}
-                    📚 BookNest
-                </h1>
+        <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-screen fixed left-0 top-0 z-50 overflow-y-auto border-r border-slate-800 shadow-2xl">
+            {/* Logo Area */}
+            <div className="p-6 flex items-center gap-3 border-b border-slate-800/50">
+                <div className="bg-emerald-500 p-2 rounded-lg shadow-lg shadow-emerald-500/20">
+                    <BookOpenIcon className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                    <h1 className="text-xl font-bold text-white tracking-tight">BookNest is working </h1>
+                    <p className="text-[10px] uppercase font-bold text-slate-500 tracking-widest">Admin Panel</p>
+                </div>
             </div>
 
-            {/* Navigation - adjusted padding, text size */}
-            <nav className="flex-grow p-3 space-y-1 overflow-y-auto"> {/* Less padding inside nav */}
-                {navLinks.map((link, index) => (
-                    link.type === 'divider' ? (
-                        // Divider styling
-                        <div key={`divider-${index}`} className="pt-5 pb-1 px-3">
-                            <span className="text-xs font-semibold uppercase text-gray-400 tracking-wider">{link.label}</span>
+            {/* Navigation Menu */}
+            <nav className="flex-1 px-4 py-6 space-y-8">
+                {menuGroups.map((group, idx) => {
+                    // Filter items based on permissions
+                    const visibleItems = group.items.filter(item => 
+                        !item.requiredPerm || hasPermission(item.requiredPerm)
+                    );
+
+                    // If group has no visible items, hide the whole group
+                    if (visibleItems.length === 0) return null;
+
+                    return (
+                        <div key={idx}>
+                            <h3 className="px-3 text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                                {group.title}
+                            </h3>
+                            <ul className="space-y-1">
+                                {visibleItems.map((item) => (
+                                    <li key={item.path}>
+                                        <NavLink
+                                            to={item.path}
+                                            className={({ isActive }) => `
+                                                flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
+                                                ${isActive 
+                                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 translate-x-1' 
+                                                    : 'hover:bg-slate-800 hover:text-white hover:translate-x-1'
+                                                }
+                                            `}
+                                        >
+                                            <item.icon className="h-5 w-5 opacity-70" />
+                                            {item.name}
+                                        </NavLink>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
-                    ) : (
-                    <motion.div
-                        key={link.to || `link-${index}`}
-                        custom={index} // Pass index for stagger
-                        variants={itemVariants}
-                        initial="hidden"
-                        animate="visible"
-                    >
-                        <NavLink
-                            to={link.to}
-                            // Modernized active/inactive styles
-                            className={({ isActive }) =>
-                                `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ease-in-out group ${ // Added group for potential hover effects on icon
-                                isActive
-                                    ? 'bg-indigo-50 text-indigo-700 shadow-sm' // Softer active background, text color, subtle shadow
-                                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800' // Lighter inactive text, slightly darker hover
-                                }`
-                            }
-                            end={link.end}
-                        >
-                            {/* Render Heroicon */}
-                            <link.icon className={`h-5 w-5 mr-3 flex-shrink-0 ${ // Icon size, margin, prevent shrinking
-                                 ({isActive}) => isActive ? 'text-indigo-500' : 'text-gray-400 group-hover:text-gray-500' // Icon color change
-                                }`} aria-hidden="true" />
-                            {link.label}
-                        </NavLink>
-                    </motion.div>
-                    )
-                ))}
+                    );
+                })}
             </nav>
+
+            {/* User Profile Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+                <div className="flex items-center gap-3 mb-4 px-2">
+                    <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-inner">
+                        {user?.username?.charAt(0).toUpperCase() || 'U'}
+                    </div>
+                    <div className="overflow-hidden">
+                        <p className="text-sm font-bold text-white truncate">{user?.username || 'User'}</p>
+                        <p className="text-xs text-slate-500 truncate">{user?.email || 'No Email'}</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={handleLogout}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white py-2.5 rounded-xl text-sm font-medium transition-all duration-300 group"
+                >
+                    <ArrowLeftOnRectangleIcon className="h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+                    Sign Out
+                </button>
+            </div>
         </aside>
     );
 };

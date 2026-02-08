@@ -1,54 +1,119 @@
-// src/api/approvalService.js
-import axios from 'axios';
+import apiClient from './apiClient';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
+// ✅ FIX 1: Add '/api' prefix explicitly
+// Agar aapka apiClient baseURL already '/api' rakhta hai to ye '/api/api/requests' ho jayega
+// Isliye hum safer side ke liye relative path use karte hain jo 'apiClient' handle karega.
+// Lekin agar 404 aa raha hai, to iska matlab path match nahi ho raha.
+// Hum yahan hardcode kar dete hain taake ghalti ki gunjaish na rahe.
+
+const BASE_URL = '/api/requests'; 
 
 export const approvalService = {
+    
+    // ============================================================
+    // 📤 UPLOAD REQUESTS (Staff <-> Admin)
+    // ============================================================
+
     /**
-     * USER ENDPOINT: Nayi access request submit karein
-     * @param {Object} requestData - { book_id, request_reason, contact_number, delivery_address, requested_days }
+     * STAFF: Create a request to approve a new book upload.
      */
-    submitRequest: async (requestData) => {
-        const token = localStorage.getItem('token');
-        const response = await axios.post(`${API_URL}/requests/access`, requestData, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        return response.data;
+    createUploadRequest: async (bookId) => {
+        try {
+            const response = await apiClient.post(`${BASE_URL}/upload`, { book_id: bookId });
+            return response.data;
+        } catch (error) {
+            console.error("Error creating upload request:", error);
+            throw error.response?.data || error;
+        }
     },
 
     /**
-     * USER ENDPOINT: User ki apni bheji hui requests fetch karein
-     */
-    getMyRequests: async () => {
-        const token = localStorage.getItem('token');
-        const response = await axios.get(`${API_URL}/requests/access/my-requests`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        return response.data;
-    },
-
-    /**
-     * ADMIN ENDPOINT: Saari pending requests fetch karein
+     * ✅ FIX 2: Aliased Function (Purana naam wapas dala hai)
+     * Agar aapka component 'getAllRequests' dhund raha hai, to ye use mil jayega.
      */
     getAllRequests: async (status = null) => {
-        const token = localStorage.getItem('token');
-        const url = status ? `${API_URL}/requests/?status=${status}` : `${API_URL}/requests/`;
-        const response = await axios.get(url, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        return response.data;
+        return await approvalService.getAllUploadRequests(status);
     },
 
     /**
-     * ADMIN ENDPOINT: Request ko approve ya reject karein
-     * @param {number} requestId 
-     * @param {Object} updateData - { status: 'Approved' | 'Rejected', rejection_reason: string }
+     * ADMIN: Get all pending upload requests.
      */
-    reviewRequest: async (requestId, updateData) => {
-        const token = localStorage.getItem('token');
-        const response = await axios.put(`${API_URL}/requests/access/${requestId}/review`, updateData, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        return response.data;
+    getAllUploadRequests: async (status = null) => {
+        try {
+            const params = status ? { status_filter: status } : {};
+            // URL ab /api/requests/upload banega
+            const response = await apiClient.get(`${BASE_URL}/upload`, { params });
+            return response.data;
+        } catch (error) {
+            console.error("Error fetching upload requests:", error);
+            throw error.response?.data || error;
+        }
+    },
+
+    /**
+     * ✅ FIX 3: Aliased Function for Review (Purana naam)
+     */
+    reviewRequest: async (requestId, status, remarks) => {
+        return await approvalService.reviewUploadRequest(requestId, status, remarks);
+    },
+
+    /**
+     * ADMIN: Review a book upload.
+     */
+    reviewUploadRequest: async (requestId, status, remarks = "") => {
+        try {
+            const response = await apiClient.put(`${BASE_URL}/upload/${requestId}/review`, {
+                status,
+                remarks
+            });
+            return response.data;
+        } catch (error) {
+            console.error("Error reviewing upload request:", error);
+            throw error.response?.data || error;
+        }
+    },
+
+    // ============================================================
+    // 📘 BOOK ACCESS REQUESTS (User <-> Admin)
+    // ============================================================
+
+    submitAccessRequest: async (requestData) => {
+        try {
+            const response = await apiClient.post(`${BASE_URL}/access`, requestData);
+            return response.data;
+        } catch (error) {
+            console.error("Error submitting access request:", error);
+            throw error.response?.data || error;
+        }
+    },
+
+    getMyAccessRequests: async () => {
+        try {
+            const response = await apiClient.get(`${BASE_URL}/access/my-requests`);
+            return response.data;
+        } catch (error) {
+            console.error("Error fetching my requests:", error);
+            throw error.response?.data || error;
+        }
+    },
+
+    getAllAccessRequests: async (params = {}) => {
+        try {
+            const response = await apiClient.get(`${BASE_URL}/access/all`, { params });
+            return response.data;
+        } catch (error) {
+            console.error("Error fetching all requests:", error);
+            throw error.response?.data || error;
+        }
+    },
+
+    reviewAccessRequest: async (requestId, updateData) => {
+        try {
+            const response = await apiClient.put(`${BASE_URL}/access/${requestId}/review`, updateData);
+            return response.data;
+        } catch (error) {
+            console.error("Error reviewing request:", error);
+            throw error.response?.data || error;
+        }
     }
 };

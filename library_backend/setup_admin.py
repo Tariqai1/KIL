@@ -1,221 +1,160 @@
-# # file: setup_admin.py
-# import os
-# import sys
-# from sqlalchemy.orm import Session
-# from database import SessionLocal, engine # Database connection
-# from auth import get_password_hash # Password hash karne ke liye
-
-# # Project ke root folder ko path me add karein
-# sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '.')))
-
-# # Sabhi models ko import karein
-# from models.user_model import User, Role
-# from models.permission_model import Permission
-
-# def setup_initial_data():
-#     """
-#     Database me initial Admin role, user, aur permissions set up karta hai.
-#     """
-#     db: Session = SessionLocal()
-#     print("Connecting to the database...")
-
-#     try:
-#         # --- 1. Admin Role Check karein aur Banayein ---
-#         admin_role = db.query(Role).filter(Role.name == "Admin").first()
-#         if not admin_role:
-#             print("Admin role not found. Creating one...")
-#             admin_role = Role(name="Admin")
-#             db.add(admin_role)
-#             db.commit()
-#             db.refresh(admin_role)
-#             print("Admin role created successfully.")
-#         else:
-#             print("Admin role already exists.")
-
-#         # --- 2. Librarian Role Check karein aur Banayein ---
-#         librarian_role = db.query(Role).filter(Role.name == "Librarian").first()
-#         if not librarian_role:
-#             print("Librarian role not found. Creating one...")
-#             librarian_role = Role(name="Librarian")
-#             db.add(librarian_role)
-#             db.commit()
-#             print("Librarian role created successfully.")
-#         else:
-#             print("Librarian role already exists.")
-            
-#         # --- 3. Admin User Check karein aur Banayein ---
-#         admin_user = db.query(User).filter(User.username == "admin").first()
-#         if not admin_user:
-#             print("Admin user not found. Creating one...")
-#             admin_password = "admin" # Aap ise badal sakte hain
-#             hashed_password = get_password_hash(admin_password)
-#             admin_user = User(
-#                 username="admin",
-#                 email="admin@library.com",
-#                 full_name="Library Administrator",
-#                 password_hash=hashed_password,
-#                 role_id=admin_role.id,
-#                 status="Active"
-#             )
-#             db.add(admin_user)
-#             db.commit()
-#             print(f"Admin user created with username 'admin' and password '{admin_password}'.")
-#         else:
-#             print("Admin user already exists.")
-
-#         # --- 4. Sabhi Permissions Banayein ---
-#         print("Checking and creating permissions...")
-#         all_permissions = [
-#             'ROLE_MANAGE', 'ROLE_VIEW', 'USER_MANAGE', 'USER_VIEW',
-#             'PERMISSION_MANAGE', 'PERMISSION_VIEW', 'ROLE_PERMISSION_ASSIGN',
-#             'BOOK_MANAGE', 'CATEGORY_MANAGE', 'LANGUAGE_MANAGE',
-#             'COPY_MANAGE', 'COPY_VIEW', 'LOCATION_MANAGE',
-#             'BOOK_ISSUE', 'ISSUE_VIEW', 'REQUEST_CREATE', 'REQUEST_VIEW',
-#             'REQUEST_APPROVE', 'LOG_VIEW', 'FILE_UPLOAD', 'DIGITAL_ACCESS_VIEW',
-#             'BOOK_PERMISSION_MANAGE', 'BOOK_PERMISSION_VIEW'
-#         ]
-        
-#         existing_permissions = db.query(Permission.name).all()
-#         existing_permission_names = {p[0] for p in existing_permissions}
-        
-#         new_permissions = []
-#         for perm_name in all_permissions:
-#             if perm_name not in existing_permission_names:
-#                 new_permissions.append(Permission(name=perm_name))
-
-#         if new_permissions:
-#             db.add_all(new_permissions)
-#             db.commit()
-#             print(f"{len(new_permissions)} new permissions created.")
-#         else:
-#             print("All permissions already exist.")
-
-#         # --- 5. Admin Role ko Sabhi Permissions Assign Karein ---
-#         print("Assigning all permissions to Admin role...")
-#         all_permission_objects = db.query(Permission).all()
-#         admin_role.permissions = all_permission_objects
-#         db.commit()
-#         print("Permissions assigned to Admin role successfully.")
-
-#     finally:
-#         print("Closing database connection.")
-#         db.close()
-
-# if __name__ == "__main__":
-#     print("--- Starting Initial Data Setup ---")
-#     setup_initial_data()
-#     print("--- Setup Complete ---")
-
-# postgressql
-# file: setup_admin.py
-
 import os
 import sys
 from sqlalchemy.orm import Session
-
-# --- NAYA CODE: .env file load karne ke liye ---
 from dotenv import load_dotenv
-load_dotenv()
-# --- KHATAM ---
 
-# Apne project ke root folder ko path me add karein
+# 1. Load Env (Zaroori hai taake Secret Key sahi load ho)
+load_dotenv()
+
+# 2. Path Setup
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '.')))
 
-from database import SessionLocal, engine
+# 3. Imports
+from database import SessionLocal
 from auth import get_password_hash
-
-# Sabhi models ko import karein
 from models.user_model import User, Role
 from models.permission_model import Permission
 
 def setup_initial_data():
-    """Database me initial Admin role, user, aur permissions set up karta hai."""
+    """
+    Creates Roles (Admin, Student, Editor, Manager), Permissions,
+    and a Default Super Admin User.
+    """
     db: Session = SessionLocal()
-    print("Connecting to the database...")
+    print("🚀 Connecting to database...")
 
     try:
-        # --- 1. Admin Role ---
-        admin_role = db.query(Role).filter(Role.name == "Admin").first()
-        if not admin_role:
-            print("Admin role not found. Creating one...")
-            admin_role = Role(name="Admin")
-            db.add(admin_role)
-            db.commit()
-            db.refresh(admin_role)
-            print("Admin role created.")
-        else:
-            print("Admin role already exists.")
-
-        # --- 2. Librarian Role ---
-        librarian_role = db.query(Role).filter(Role.name == "Librarian").first()
-        if not librarian_role:
-            print("Librarian role not found. Creating one...")
-            librarian_role = Role(name="Librarian")
-            db.add(librarian_role)
-            db.commit()
-            print("Librarian role created.")
-        else:
-            print("Librarian role already exists.")
+        # ==========================================
+        # 1. DEFINE ROLES & PERMISSIONS
+        # ==========================================
+        
+        # A. All Roles List
+        roles_to_create = ["Admin", "Student", "Editor", "Manager", "Member"]
+        
+        # B. All Permissions List
+        all_permissions = [
+            # User & Role Management
+            'USER_VIEW', 'USER_MANAGE', 
+            'ROLE_VIEW', 'ROLE_MANAGE', 'ROLE_PERMISSION_ASSIGN',
+            'PERMISSION_VIEW', 'PERMISSION_MANAGE',
             
-        # --- 3. Admin User ---
+            # Book Management
+            'BOOK_VIEW', 'BOOK_MANAGE', 'BOOK_ISSUE', 
+            'CATEGORY_MANAGE', 'LANGUAGE_MANAGE', 
+            'LOCATION_MANAGE', 'COPY_MANAGE', 'COPY_VIEW',
+            
+            # Requests & Circulation
+            'REQUEST_CREATE', 'REQUEST_VIEW', 'REQUEST_APPROVE', 'REQUEST_MANAGE',
+            'ISSUE_VIEW',
+            
+            # System & Logs
+            'LOG_VIEW', 'FILE_UPLOAD', 'DIGITAL_ACCESS_VIEW',
+            'BOOK_PERMISSION_MANAGE', 'BOOK_PERMISSION_VIEW'
+        ]
+
+        # ==========================================
+        # 2. CREATE PERMISSIONS
+        # ==========================================
+        print(f"🛠  Checking {len(all_permissions)} permissions...")
+        existing_perms = {p.name for p in db.query(Permission).all()}
+        
+        new_perms = []
+        for name in all_permissions:
+            if name not in existing_perms:
+                new_perms.append(Permission(name=name))
+        
+        if new_perms:
+            db.add_all(new_perms)
+            db.commit()
+            print(f"✅ Added {len(new_perms)} new permissions.")
+        else:
+            print("✅ All permissions already exist.")
+
+        # Reload all permissions map for assignment
+        all_perms_map = {p.name: p for p in db.query(Permission).all()}
+
+        # ==========================================
+        # 3. CREATE ROLES & ASSIGN PERMISSIONS
+        # ==========================================
+        print("👤 Checking Roles...")
+        
+        for role_name in roles_to_create:
+            role = db.query(Role).filter(Role.name == role_name).first()
+            if not role:
+                role = Role(name=role_name)
+                db.add(role)
+                db.commit()
+                db.refresh(role)
+                print(f"   + Created Role: {role_name}")
+            else:
+                print(f"   - Role exists: {role_name}")
+            
+            # --- Permission Assignment Logic ---
+            perms_to_assign = []
+            
+            if role_name == "Admin":
+                # Admin gets EVERYTHING
+                perms_to_assign = list(all_perms_map.values())
+            
+            elif role_name == "Manager":
+                # Manager gets most things except system configs
+                allowed = ['BOOK_MANAGE', 'BOOK_ISSUE', 'USER_VIEW', 'REQUEST_APPROVE', 'REQUEST_MANAGE', 'LOG_VIEW']
+                perms_to_assign = [all_perms_map[p] for p in allowed if p in all_perms_map]
+
+            elif role_name == "Editor":
+                # Editor manages books only
+                allowed = ['BOOK_MANAGE', 'BOOK_VIEW', 'CATEGORY_MANAGE', 'BOOK_ISSUE']
+                perms_to_assign = [all_perms_map[p] for p in allowed if p in all_perms_map]
+
+            elif role_name in ["Student", "Member"]:
+                # Students can only view books and make requests
+                allowed = ['BOOK_VIEW', 'REQUEST_CREATE', 'REQUEST_VIEW']
+                perms_to_assign = [all_perms_map[p] for p in allowed if p in all_perms_map]
+
+            # Update Role Permissions
+            role.permissions = perms_to_assign
+            db.commit()
+
+        # ==========================================
+        # 4. CREATE / FIX ADMIN USER
+        # ==========================================
+        print("🔑 Checking Admin User...")
+        admin_role = db.query(Role).filter(Role.name == "Admin").first()
         admin_user = db.query(User).filter(User.username == "admin").first()
-        if not admin_user:
-            print("Admin user not found. Creating one...")
-            admin_password = "admin"  # Default password
-            hashed_password = get_password_hash(admin_password)
+        
+        # Password hardcoded for recovery
+        new_password = "admin" 
+        hashed_pw = get_password_hash(new_password)
+
+        if admin_user:
+            # Update existing admin (Fixes 401 Error)
+            admin_user.password_hash = hashed_pw
+            admin_user.role_id = admin_role.id
+            admin_user.status = "Active"
+            print("✅ Admin user updated (Password reset to 'admin')")
+        else:
+            # Create new admin
             admin_user = User(
                 username="admin",
                 email="admin@library.com",
-                full_name="Library Administrator",
-                password_hash=hashed_password,
+                full_name="Super Administrator",
+                password_hash=hashed_pw,
                 role_id=admin_role.id,
                 status="Active"
             )
             db.add(admin_user)
-            db.commit()
-            print(f"Admin user created with username 'admin' and password '{admin_password}'.")
-        else:
-            print("Admin user already exists.")
+            print("✅ Admin user created.")
 
-        # --- 4. Permissions ---
-        print("Checking and creating permissions...")
-        all_permissions = [
-            'ROLE_MANAGE', 'ROLE_VIEW', 'USER_MANAGE', 'USER_VIEW',
-            'PERMISSION_MANAGE', 'PERMISSION_VIEW', 'ROLE_PERMISSION_ASSIGN',
-            'BOOK_MANAGE', 'CATEGORY_MANAGE', 'LANGUAGE_MANAGE',
-            'COPY_MANAGE', 'COPY_VIEW', 'LOCATION_MANAGE',
-            'BOOK_ISSUE', 'ISSUE_VIEW', 'REQUEST_CREATE', 'REQUEST_VIEW',
-            'REQUEST_APPROVE', 'LOG_VIEW', 'FILE_UPLOAD', 'DIGITAL_ACCESS_VIEW',
-            'BOOK_PERMISSION_MANAGE', 'BOOK_PERMISSION_VIEW'
-        ]
-
-        existing_permissions = db.query(Permission.name).all()
-        existing_permission_names = {p[0] for p in existing_permissions}
-        
-        new_permissions = [
-            Permission(name=perm_name)
-            for perm_name in all_permissions if perm_name not in existing_permission_names
-        ]
-
-        if new_permissions:
-            db.add_all(new_permissions)
-            db.commit()
-            print(f"{len(new_permissions)} new permissions created.")
-        else:
-            print("All permissions already exist.")
-
-        # --- 5. Assign All Permissions to Admin Role ---
-        print("Assigning all permissions to Admin role...")
-        all_permission_objects = db.query(Permission).all()
-        admin_role.permissions = all_permission_objects
         db.commit()
-        print("Permissions assigned to Admin role.")
+        print("\n🎉 SETUP COMPLETE! You can login with:")
+        print(f"👉 Username: admin")
+        print(f"👉 Password: {new_password}")
 
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        db.rollback()
     finally:
-        print("Closing database connection.")
         db.close()
 
 if __name__ == "__main__":
-    print("--- Starting Initial Data Setup ---")
     setup_initial_data()
-    print("--- Setup Complete ---")

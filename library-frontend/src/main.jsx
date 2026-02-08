@@ -1,19 +1,21 @@
-// src/main.jsx
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import App from './App.jsx';
-import { AuthProvider } from './context/AuthProvider'; // Import the AuthProvider
-import './index.css'; // Your main CSS file
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import App from "./App.jsx";
+import { AuthProvider } from "./context/AuthProvider";
+import { GoogleOAuthProvider } from "@react-oauth/google";
+import "./index.css";
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    {/* BrowserRouter provides routing capabilities */}
-    <BrowserRouter>
-      {/* AuthProvider manages login state, user, and token */}
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <BrowserRouter>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrowserRouter>
+    </GoogleOAuthProvider>
   </React.StrictMode>
 );

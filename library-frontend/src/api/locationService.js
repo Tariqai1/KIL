@@ -1,71 +1,92 @@
 // src/api/locationService.js
-import apiClient from './apiClient';
+import apiClient from "./apiClient";
 
-/**
- * Fetches all locations.
- * API: GET /api/locations/
- */
+// ✅ API Base URL
+const LOCATION_URL = "/api/locations/";
+
+// ✅ Standard Error Extractor
+const extractErrorMessage = (error, fallback = "Something went wrong") => {
+  return (
+    error?.response?.data?.detail ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  );
+};
+
+// ✅ Get All Locations
 const getAllLocations = async () => {
-    try {
-        const response = await apiClient.get('/api/locations/');
-        return response.data;
-    } catch (error) {
-        console.error("Error fetching locations:", error.response?.data || error.message);
-        throw error.response?.data || { detail: 'Failed to fetch locations' };
-    }
+  try {
+    const response = await apiClient.get(LOCATION_URL);
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    console.error("❌ Error fetching locations:", error.response?.data || error.message);
+    throw { detail: extractErrorMessage(error, "Failed to fetch locations") };
+  }
 };
 
-/**
- * Creates a new location.
- * API: POST /api/locations/
- * @param {object} locationData - { name, description, etc. }
- */
+// ✅ Create Location
 const createLocation = async (locationData) => {
-    try {
-        const response = await apiClient.post('/api/locations/', locationData);
-        return response.data;
-    } catch (error) {
-        console.error("Error creating location:", error.response?.data || error.message);
-        throw error.response?.data || { detail: 'Failed to create location' };
-    }
+  try {
+    const payload = {
+      name: locationData?.name?.trim(),
+      rack: locationData?.rack?.trim() || null,
+      shelf: locationData?.shelf?.trim() || null,
+    };
+
+    const response = await apiClient.post(LOCATION_URL, payload);
+    return response.data;
+  } catch (error) {
+    console.error("❌ Error creating location:", error.response?.data || error.message);
+    throw { detail: extractErrorMessage(error, "Failed to create location") };
+  }
 };
 
-/**
- * Updates an existing location.
- * API: PUT /api/locations/{id}/
- */
+// ✅ Update Location
 const updateLocation = async (locationId, locationData) => {
-    try {
-        const response = await apiClient.put(`/api/locations/${locationId}/`, locationData);
-        return response.data;
-    } catch (error) {
-        console.error(`Error updating location ${locationId}:`, error.response?.data || error.message);
-        throw error.response?.data || { detail: 'Failed to update location' };
-    }
+  try {
+    if (!locationId) throw { detail: "Location ID is required" };
+
+    const payload = {
+      name: locationData?.name?.trim(),
+      rack: locationData?.rack?.trim() || null,
+      shelf: locationData?.shelf?.trim() || null,
+    };
+
+    const response = await apiClient.put(`${LOCATION_URL}${locationId}/`, payload);
+    return response.data;
+  } catch (error) {
+    console.error(`❌ Error updating location ${locationId}:`, error.response?.data || error.message);
+    throw { detail: extractErrorMessage(error, "Failed to update location") };
+  }
 };
 
-/**
- * Deletes a location.
- * API: DELETE /api/locations/{id}/
- */
+// ✅ Delete Location
 const deleteLocation = async (locationId) => {
-    try {
-        const response = await apiClient.delete(`/api/locations/${locationId}/`);
-        return response.data || { detail: "Location deleted successfully" };
-    } catch (error) {
-        console.error(`Error deleting location ${locationId}:`, error.response?.data || error.message);
-        // Specific handling for foreign key constraint (if location is used in books)
-        if (error.response?.status === 400 || error.response?.status === 500) {
-             throw { detail: 'Cannot delete location: It might be associated with existing books.' };
-        }
-        throw error.response?.data || { detail: 'Failed to delete location' };
+  try {
+    if (!locationId) throw { detail: "Location ID is required" };
+
+    const response = await apiClient.delete(`${LOCATION_URL}${locationId}/`);
+    return response.data || { detail: "Location deleted successfully" };
+  } catch (error) {
+    console.error(`❌ Error deleting location ${locationId}:`, error.response?.data || error.message);
+
+    // ✅ Better user-friendly error for FK issues
+    if (error?.response?.status === 400 || error?.response?.status === 409) {
+      throw { detail: "Cannot delete location: It is linked with existing books." };
     }
+
+    throw { detail: extractErrorMessage(error, "Failed to delete location") };
+  }
 };
 
-// Exporting as a single object to maintain compatibility
+// ✅ Named Export (if you want)
 export const locationService = {
-    getAllLocations,
-    createLocation,
-    updateLocation,
-    deleteLocation,
+  getAllLocations,
+  createLocation,
+  updateLocation,
+  deleteLocation,
 };
+
+// ✅ Default Export (recommended)
+export default locationService;

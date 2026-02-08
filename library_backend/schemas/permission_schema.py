@@ -2,9 +2,11 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+# --- 1. Permission Schema ---
 class PermissionBase(BaseModel):
     name: str
-    description: Optional[str] = None
+    # ہم نے 'codename' کو ہٹا کر 'description' کر دیا ہے کیونکہ آپ کے ماڈل میں یہی نام ہے
+    description: Optional[str] = None 
 
 class PermissionCreate(PermissionBase):
     pass
@@ -15,16 +17,28 @@ class Permission(PermissionBase):
     class Config:
         from_attributes = True
 
-# Role ke schema ko update karke usmein permissions dikhayenge
-# Naya schema: Role with its permissions
-class RoleWithPermissions(BaseModel):
-    id: int
+# --- 2. Role Schema ---
+class RoleBase(BaseModel):
     name: str
+
+class RoleCreate(RoleBase):
+    pass
+
+class Role(RoleBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+# --- 3. Role with Permissions ---
+class RoleWithPermissions(Role):
+    # یہ وہ جگہ ہے جہاں غلطی ہو رہی تھی، اب یہ صحیح ڈیٹا لوڈ کرے گا
     permissions: List[Permission] = []
 
     class Config:
         from_attributes = True
 
-# Role ko permissions assign karne ke liye schema
+# --- 4. Assign Permission Schema ---
 class AssignPermissionsToRole(BaseModel):
-    permission_ids: List[int] = Field(..., min_items=1)
+    # یہاں 'min_items=1' ہٹا دیا ہے تاکہ اگر کوئی تمام پرمیشنز ختم کرنا چاہے تو ایرر نہ آئے
+    permission_ids: List[int] = Field(default=[])

@@ -8,8 +8,9 @@ export const ViewState = {
 };
 
 export const PURPOSES = [
-    "علمی رد اور احقاقِ حق",
-    "تنبیہ و تحذیر (امت کو بچانے کے لیے)",
-    "تحقیقی مقالہ / تقابلِ مسالک",
-    "دعوتی ضرورت"
+  "Academic Research",
+  "Refutation / Critical Study",
+  "Teaching / Lecture Preparation",
+  "Thesis / Dissertation",
+  "Personal Study (Supervised)",
 ];

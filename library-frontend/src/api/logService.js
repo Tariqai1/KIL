@@ -1,57 +1,140 @@
 // src/api/logService.js
-import apiClient from './apiClient';
+import apiClient from "./apiClient";
+
+const LOGS_URL = "/api/logs/";
 
 /**
- * Fetches audit logs from the backend.
- * Supports optional filtering by user ID or action type, and pagination.
- * @param {object} [filters={}] - Optional filters object.
- * @param {number} [filters.userId] - Filter by user ID.
- * @param {string} [filters.actionType] - Filter by action type string.
- * @param {number} [filters.limit=100] - Number of logs to fetch.
- * @param {number} [filters.skip=0] - Number of logs to skip (for pagination).
- * @returns {Promise<Array>} List of log objects.
- * @throws {object|Error} Throws backend error detail or generic Error.
+ * ✅ Standard error extractor (frontend friendly)
  */
-const getLogs = async (filters = {}) => {
-    try {
-        // Prepare params object for Axios, matching backend query parameter names
-        const params = {
-            limit: filters.limit ?? 100, // Use nullish coalescing for default
-            skip: filters.skip ?? 0,
-        };
-        // Use backend parameter names (user_id, action_type) if they differ from filter keys
-        if (filters.userId) {
-            params.user_id = filters.userId; // Match backend controller parameter
-        }
-        if (filters.actionType) {
-            params.action_type = filters.actionType; // Match backend controller parameter
-        }
-
-        // Let Axios handle query parameter serialization
-        // Ensure the base URL is correct and includes trailing slash if needed by backend
-        const response = await apiClient.get('/api/logs/', { params });
-        return response.data;
-    } catch (error) {
-        console.error("Error fetching logs:", error.response?.data || error.message);
-        // Rethrow a consistent error structure
-        throw error.response?.data || { detail: error.message || 'Failed to fetch audit logs' };
-    }
+const extractErrorMessage = (error, fallback = "Failed to fetch audit logs") => {
+  return (
+    error?.response?.data?.detail ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  );
 };
 
 /**
- * Fetches the most recent log entries.
- * A convenience function calling getLogs.
- * @param {number} [limit=5] - Maximum number of logs to fetch.
- * @returns {Promise<Array>} List of log objects.
- * @throws {object|Error} Throws backend error detail or generic Error.
+ * ✅ Normalize filters (safe + backend-friendly)
+ * Backend expects snake_case params:
+ * user_id, action_type, target_type, limit, skip
+ */
+const normalizeFilters = (filters = {}) => {
+  const params = {
+    limit: Number.isFinite(filters.limit) ? filters.limit : 100,
+    skip: Number.isFinite(filters.skip) ? filters.skip : 0,
+  };
+
+  // userId safe parse
+  if (
+    filters.userId !== undefined &&
+    filters.userId !== null &&
+    String(filters.userId).trim() !== ""
+  ) {
+    const parsed = parseInt(filters.userId, 10);
+    if (!Number.isNaN(parsed)) params.user_id = parsed;
+  }
+
+  // actionType safe
+  if (filters.actionType && String(filters.actionType).trim()) {
+    params.action_type = String(filters.actionType).trim();
+  }
+
+  // targetType safe
+  if (filters.targetType && String(filters.targetType).trim()) {
+    params.target_type = String(filters.targetType).trim();
+  }
+
+  return params;
+};
+
+/**
+ * ✅ Validate response data
+ */
+const normalizeLogsResponse = (data) => {
+  if (Array.isArray(data)) return data;
+  return [];
+};
+
+/**
+ * ==========================================================
+ * ✅ Fetch audit logs
+ * Supports: limit, skip, userId, actionType, targetType
+ * ==========================================================
+ */
+const getLogs = async (filters = {}, options = {}) => {
+  try {
+    const params = normalizeFilters(filters);
+
+    // ✅ Abort support (optional)
+    const response = await apiClient.get(LOGS_URL, {
+      params,
+      signal: options.signal, // if you pass AbortController.signal
+    });
+
+    return normalizeLogsResponse(response.data);
+  } catch (error) {
+    // ✅ If request cancelled
+    if (error?.name === "CanceledError") {
+      console.warn("⚠️ Logs request cancelled");
+      return [];
+    }
+
+    // ✅ If unauthorized
+    if (error?.response?.status === 401) {
+      console.warn("🚫 Unauthorized: Please login again.");
+      throw { detail: "Session expired. Please login again." };
+    }
+
+    console.error("❌ Error fetching logs:", error?.response?.data || error?.message);
+
+    throw {
+      detail: extractErrorMessage(error),
+      status: error?.response?.status || 500,
+    };
+  }
+};
+
+/**
+ * ✅ Recent logs helper
  */
 const getRecentLogs = async (limit = 5) => {
-    // Calls getLogs with skip=0 and the desired limit
-    return getLogs({ limit: limit, skip: 0 });
+  return getLogs({ limit, skip: 0 });
 };
 
-// Export both functions for flexibility
-export const logService = {
-    getLogs,
-    getRecentLogs,
+/**
+ * ✅ Pagination helper (optional)
+ * Example:
+ * const { logs, hasNext } = await logService.getLogsPage(1, 25, filters)
+ */
+const getLogsPage = async (page = 1, perPage = 25, filters = {}) => {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safePerPage = Math.max(1, Number(perPage) || 25);
+
+  const skip = (safePage - 1) * safePerPage;
+
+  const logs = await getLogs({
+    ...filters,
+    limit: safePerPage,
+    skip,
+  });
+
+  return {
+    logs,
+    page: safePage,
+    perPage: safePerPage,
+    hasNext: logs.length === safePerPage,
+  };
 };
+
+/**
+ * ✅ Export service (named + default)
+ */
+export const logService = {
+  getLogs,
+  getRecentLogs,
+  getLogsPage, // optional
+};
+
+export default logService;

@@ -1,75 +1,115 @@
-// src/pages/ApprovalManagement.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { approvalService } from '../api/approvalService';
-import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircleIcon, XCircleIcon, ClockIcon, MagnifyingGlassIcon, ArrowPathIcon } from '@heroicons/react/20/solid';
-// Import a placeholder icon
-import { BookOpenIcon } from '@heroicons/react/24/outline'; 
-// Make sure these CSS files exist at these paths
-import '../assets/css/ManagementPages.css'; 
-import '../assets/css/ApprovalManagement.css'; 
+import toast, { Toaster } from 'react-hot-toast';
+import Skeleton from 'react-loading-skeleton';
+import 'react-loading-skeleton/dist/skeleton.css';
 
-// Helper to get full URL
+// --- Icons ---
+import { 
+    CheckCircleIcon, XCircleIcon, ClockIcon, MagnifyingGlassIcon, 
+    ArrowPathIcon, CalendarIcon, UserIcon, EyeIcon, XMarkIcon, 
+    DocumentTextIcon, ExclamationTriangleIcon, DocumentCheckIcon,
+    ArrowTopRightOnSquareIcon 
+} from '@heroicons/react/24/outline';
+
+// --- API Service ---
+import { approvalService } from '../api/approvalService';
+
+// --- CSS ---
+import '../assets/css/ManagementPages.css'; 
+import '../assets/css/ApprovalManagement.css';
+
+// --- Constants ---
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+
+// ✅ FIXED: Hybrid URL Generator (Works for Cloudinary & Local)
 const getStaticUrl = (relativePath) => {
     if (!relativePath) return null;
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-    return `${baseUrl}${relativePath}`;
+    
+    // Ensure path is a string
+    const pathStr = String(relativePath);
+
+    // 1. If it's already a full URL (Cloudinary), return as is
+    if (pathStr.startsWith('http://') || pathStr.startsWith('https://')) {
+        return pathStr;
+    }
+
+    // 2. Handle Windows paths (Convert \ to /)
+    const normalizedPath = pathStr.replace(/\\/g, '/');
+    
+    // 3. If path contains '/static/', extract relative part for backend
+    if (normalizedPath.includes('/static/')) {
+        const parts = normalizedPath.split('/static/');
+        return `${API_BASE_URL}/static/${parts[1]}`;
+    }
+
+    // 4. Default Local Handling
+    const cleanPath = normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`;
+    return `${API_BASE_URL}${cleanPath}`;
 };
 
-// Animation Variants
-const cardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
-    exit: { opacity: 0, y: -10, transition: { duration: 0.2, ease: 'easeIn' } }
-};
-const tabContentVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3, delay: 0.1 } },
-    exit: { opacity: 0, y: -5, transition: { duration: 0.15, ease: 'easeIn' } }
+// --- Helper Components ---
+
+const StatusBadge = ({ status }) => {
+    const configs = {
+        Approved: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircleIcon },
+        Rejected: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', icon: XCircleIcon },
+        Pending:  { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: ClockIcon },
+    };
+    const config = configs[status] || configs.Pending;
+    const Icon = config.icon;
+
+    return (
+        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${config.bg} ${config.text} ${config.border}`}>
+            <Icon className="w-3.5 h-3.5 mr-1.5" />
+            {status}
+        </span>
+    );
 };
 
-// Simple Spinner Icon Component
-const SpinnerIcon = () => (
-     <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-     </svg>
+const StatCard = ({ title, value, icon: Icon, colorClass }) => (
+    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+        <div className={`p-3 rounded-xl ${colorClass} bg-opacity-10`}>
+            <Icon className={`w-6 h-6 ${colorClass.replace('bg-', 'text-')}`} />
+        </div>
+        <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{title}</p>
+            <h3 className="text-2xl font-black text-slate-800">{value}</h3>
+        </div>
+    </div>
 );
-// Placeholder icon for missing cover image
-const PlaceholderBookIcon = ({className}) => (
-    <BookOpenIcon className={className} />
-);
 
+// --- MAIN COMPONENT ---
 
 const ApprovalManagement = () => {
     // --- State ---
-    // *** YAHAN FIX HAI: Sabhi ko [] se initialize kiya gaya hai ***
     const [allRequests, setAllRequests] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [activeTab, setActiveTab] = useState('pending');
-    const [rejectingRequest, setRejectingRequest] = useState(null);
+    const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'history'
+    
+    // Actions
+    const [rejectingId, setRejectingId] = useState(null);
     const [rejectionRemarks, setRejectionRemarks] = useState('');
-    const [actionLoading, setActionLoading] = useState(null);
-    const [reviewedSearchTerm, setReviewedSearchTerm] = useState('');
-    const [reviewedCurrentPage, setReviewedCurrentPage] = useState(1);
-    const [reviewedItemsPerPage] = useState(10);
+    const [actionLoadingId, setActionLoadingId] = useState(null);
+    const [previewBook, setPreviewBook] = useState(null);
+
+    // Filters
+    const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 8;
 
     // --- Data Fetching ---
-    // YEH AAPKA SAHI FUNCTION NAAM HAI: 'fetchRequests'
-    const fetchRequests = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        setRejectingRequest(null);
+    const fetchRequests = useCallback(async (isBackground = false) => {
+        if (!isBackground) setIsLoading(true);
         try {
-            const data = await approvalService.getAllRequests();
-            setAllRequests(data || []); // Ensure it's always an array
+            const data = await approvalService.getAllUploadRequests(); 
+            setAllRequests(Array.isArray(data) ? data : []);
         } catch (err) {
-            setError(err.detail || 'Could not fetch approval requests.');
-            setAllRequests([]); // Set to empty array on error
+            console.error("Fetch error:", err);
+            toast.error("Failed to load requests.");
+            setAllRequests([]);
         } finally {
-            setIsLoading(false);
+            if (!isBackground) setIsLoading(false);
         }
     }, []);
 
@@ -77,243 +117,333 @@ const ApprovalManagement = () => {
         fetchRequests();
     }, [fetchRequests]);
 
-    // --- Derive Lists (Safe with || []) ---
-    const pendingRequests = useMemo(() =>
-        (allRequests || []).filter(req => req.status === 'Pending'),
-        [allRequests]
+    // --- Derived Data ---
+    const pendingRequests = useMemo(() => allRequests.filter(req => req.status === 'Pending'), [allRequests]);
+    const historyRequests = useMemo(() => allRequests.filter(req => req.status !== 'Pending'), [allRequests]);
+
+    const displayData = useMemo(() => {
+        const source = activeTab === 'pending' ? pendingRequests : historyRequests;
+        if (!searchTerm) return source;
+        const lower = searchTerm.toLowerCase();
+        return source.filter(req => 
+            req.book?.title?.toLowerCase().includes(lower) ||
+            req.submitted_by?.username?.toLowerCase().includes(lower)
+        );
+    }, [activeTab, pendingRequests, historyRequests, searchTerm]);
+
+    const paginatedData = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return displayData.slice(start, start + itemsPerPage);
+    }, [displayData, currentPage]);
+
+    const totalPages = Math.ceil(displayData.length / itemsPerPage);
+
+    // --- Actions ---
+    const handleAction = async (id, status, remarks) => {
+        const originalState = [...allRequests];
+        
+        // Optimistic UI Update
+        setAllRequests(prev => prev.map(req => 
+            req.id === id 
+                ? { ...req, status: status, remarks: remarks, reviewed_at: new Date().toISOString(), reviewed_by: { username: 'You' } } 
+                : req
+        ));
+
+        // Reset UI
+        setRejectingId(null);
+        setRejectionRemarks('');
+        setPreviewBook(null);
+        setActionLoadingId(id);
+
+        try {
+            await approvalService.reviewUploadRequest(id, status, remarks);
+            toast.success(`Request ${status}`);
+            fetchRequests(true); // Sync with backend
+        } catch (err) {
+            setAllRequests(originalState); // Revert on fail
+            toast.error("Action failed. Please try again.");
+        } finally {
+            setActionLoadingId(null);
+        }
+    };
+
+    // --- RENDERERS ---
+
+    // 1. Pending Card
+    const renderPendingCard = (request) => (
+        <motion.div 
+            layout 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            key={request.id} 
+            className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition-all duration-300 group"
+        >
+            <div className="flex h-full">
+                {/* Thumbnail */}
+                <div 
+                    className="w-32 bg-slate-100 relative cursor-pointer group-hover:opacity-90 transition-opacity"
+                    onClick={() => setPreviewBook(request)}
+                >
+                    <img 
+                        src={getStaticUrl(request.book?.cover_image_url) || "https://via.placeholder.com/150"} 
+                        alt="Cover" 
+                        className="w-full h-full object-cover"
+                        onError={(e) => e.target.src = "https://via.placeholder.com/150?text=No+Img"}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <EyeIcon className="w-8 h-8 text-white drop-shadow-md" />
+                    </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 p-5 flex flex-col justify-between">
+                    <div>
+                        <div className="flex justify-between items-start mb-2">
+                            <h3 className="font-bold text-slate-800 line-clamp-1" title={request.book?.title}>
+                                {request.book?.title || "Untitled Book"}
+                            </h3>
+                            <StatusBadge status="Pending" />
+                        </div>
+                        
+                        <div className="space-y-1 mb-4">
+                            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                                <UserIcon className="w-3.5 h-3.5" /> 
+                                Uploaded by <span className="font-bold text-slate-700">{request.submitted_by?.username}</span>
+                            </p>
+                            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                                <CalendarIcon className="w-3.5 h-3.5" /> 
+                                {new Date(request.submitted_at).toLocaleDateString()}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="pt-4 border-t border-slate-100 flex gap-2 justify-end">
+                        {rejectingId === request.id ? (
+                            <div className="flex-1 flex gap-2 animate-in fade-in slide-in-from-right-2">
+                                <input 
+                                    type="text" 
+                                    placeholder="Reason..." 
+                                    className="flex-1 text-xs border border-red-200 rounded-lg px-2 focus:outline-none focus:border-red-500"
+                                    value={rejectionRemarks}
+                                    onChange={(e) => setRejectionRemarks(e.target.value)}
+                                    autoFocus
+                                />
+                                <button onClick={() => handleAction(request.id, 'Rejected', rejectionRemarks)} className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg">Confirm</button>
+                                <button onClick={() => setRejectingId(null)} className="px-2 py-1.5 text-slate-400 hover:text-slate-600"><XMarkIcon className="w-4 h-4" /></button>
+                            </div>
+                        ) : (
+                            <>
+                                <button 
+                                    onClick={() => setRejectingId(request.id)}
+                                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-50 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                >
+                                    Reject
+                                </button>
+                                <button 
+                                    onClick={() => handleAction(request.id, 'Approved', 'Approved via Panel')}
+                                    className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm hover:shadow-md transition-all flex items-center gap-1"
+                                >
+                                    {actionLoadingId === request.id ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <CheckCircleIcon className="w-3.5 h-3.5" />}
+                                    Approve
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </motion.div>
     );
 
-    const filteredReviewedRequests = useMemo(() => {
-        const reviewed = (allRequests || []).filter(req => req.status !== 'Pending');
-        if (!reviewedSearchTerm) {
-            return reviewed;
-        }
-        const lowerSearch = reviewedSearchTerm.toLowerCase();
-        return reviewed.filter(req =>
-            (req.book?.title && req.book.title.toLowerCase().includes(lowerSearch)) ||
-            (req.submitted_by?.username && req.submitted_by.username.toLowerCase().includes(lowerSearch)) ||
-            (req.reviewed_by?.username && req.reviewed_by.username.toLowerCase().includes(lowerSearch)) ||
-            (req.status && req.status.toLowerCase().includes(lowerSearch)) ||
-            (req.remarks && req.remarks.toLowerCase().includes(lowerSearch))
-        );
-    }, [allRequests, reviewedSearchTerm]);
-
-    // --- Pagination Logic (Safe with .length) ---
-    const paginatedReviewedRequests = useMemo(() => {
-        const startIndex = (reviewedCurrentPage - 1) * reviewedItemsPerPage;
-        return filteredReviewedRequests.slice(startIndex, startIndex + reviewedItemsPerPage);
-    }, [filteredReviewedRequests, reviewedCurrentPage, reviewedItemsPerPage]);
-
-    const reviewedTotalPages = useMemo(() => {
-        return Math.ceil(filteredReviewedRequests.length / reviewedItemsPerPage);
-    }, [filteredReviewedRequests, reviewedItemsPerPage]);
-
-    useEffect(() => {
-        setReviewedCurrentPage(1);
-    }, [reviewedSearchTerm]);
-    
-    const goToNextReviewedPage = () => {
-        setReviewedCurrentPage((prev) => Math.min(prev + 1, reviewedTotalPages));
-    };
-    const goToPreviousReviewedPage = () => {
-        setReviewedCurrentPage((prev) => Math.max(prev - 1, 1));
-    };
-
-    // --- Action Handlers ---
-    const handleApprove = async (requestId) => {
-        setActionLoading(requestId); setError(null);
-        try {
-            await approvalService.reviewRequest(requestId, 'Approved', 'Approved via Admin Panel');
-            fetchRequests();
-        } catch (err) { setError(err.detail || `Failed to approve request ${requestId}.`); }
-        finally { setActionLoading(null); }
-    };
-
-    const handleRejectClick = (request) => {
-        setRejectingRequest(request);
-        setRejectionRemarks('');
-    };
-
-    const handleConfirmReject = async (e) => {
-        e.preventDefault(); if (!rejectingRequest) return;
-        setActionLoading(rejectingRequest.id); setError(null);
-        try {
-            await approvalService.reviewRequest(rejectingRequest.id, 'Rejected', rejectionRemarks);
-            setRejectingRequest(null);
-            fetchRequests();
-        } catch (err) { setError(err.detail || `Failed to reject request ${rejectingRequest.id}.`); }
-        finally { setActionLoading(null); }
-    };
-
-    // --- Render Functions ---
-    const renderRequestCard = (request) => {
-        const book = request.book;
-        const submittedBy = request.submitted_by;
-        const coverImageUrl = getStaticUrl(book?.cover_image_url);
-        const isBeingRejected = rejectingRequest?.id === request.id;
-        const isCurrentActionLoading = actionLoading === request.id;
-
-        return (
-            <motion.div key={request.id} layout variants={cardVariants} initial="hidden" animate="visible" exit="exit" className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200 flex flex-col sm:flex-row">
-                <div className="flex-shrink-0 w-full sm:w-32 h-48 sm:h-auto bg-gray-100 flex items-center justify-center">
-                    {coverImageUrl ? <img src={coverImageUrl} alt={`Cover for ${book?.title}`} className="w-full h-full object-cover" /> : <PlaceholderBookIcon className="h-16 w-16 text-gray-400" />}
-                </div>
-                <div className="p-4 flex-grow flex flex-col justify-between">
-                    <div>
-                        <h4 className="font-semibold text-lg text-gray-800 mb-1 hover:text-indigo-600"><Link to={`/books/${book?.id}`}>{book?.title || 'Unknown Title'}</Link><span className="text-xs text-gray-500 ml-1"> (ID: {book?.id})</span></h4>
-                        <p className="text-sm text-gray-600 mb-1">Author: {book?.author || 'N/A'}</p><p className="text-sm text-gray-600 mb-3">ISBN: {book?.isbn || 'N/A'}</p>
-                        <p className="text-xs text-gray-500">Submitted By: {submittedBy?.username || 'N/A'} on {new Date(request.submitted_at).toLocaleDateString()} (Req ID: {request.id})</p>
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-gray-100">
-                        {isBeingRejected ? (
-                            <motion.form initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} onSubmit={handleConfirmReject} className="space-y-2">
-                                <label htmlFor={`remarks-${request.id}`} className="block text-xs font-medium text-gray-600">Reason (Optional):</label>
-                                <textarea id={`remarks-${request.id}`} value={rejectionRemarks} onChange={(e) => setRejectionRemarks(e.target.value)} rows="2" disabled={isCurrentActionLoading} className="w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm sm:text-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50"/>
-                                <div className="flex justify-end space-x-2">
-                                    <button type="button" onClick={() => setRejectingRequest(null)} disabled={isCurrentActionLoading} className="px-3 py-1 border border-gray-300 rounded-md text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-                                    <button type="submit" disabled={isCurrentActionLoading} className="px-3 py-1 border border-transparent rounded-md text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 flex items-center">{isCurrentActionLoading && <SpinnerIcon />} Confirm Reject</button>
-                                </div>
-                            </motion.form>
-                        ) : (
-                            <div className="flex justify-end space-x-3">
-                                <button onClick={() => handleRejectClick(request)} disabled={isCurrentActionLoading} className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"><XCircleIcon className="-ml-0.5 mr-1 h-4 w-4 text-gray-500" /> Reject</button>
-                                <button onClick={() => handleApprove(request.id)} disabled={isCurrentActionLoading} className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50">{isCurrentActionLoading ? <SpinnerIcon /> : <CheckCircleIcon className="-ml-0.5 mr-1 h-4 w-4" />} Approve</button>
-                            </div>
-                           )}
-                    </div>
-                </div>
-            </motion.div>
-        );
-    };
-
-    const renderReviewedRow = (request) => {
-        const book = request.book;
-        const reviewedBy = request.reviewed_by;
-        const statusClass = request.status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-        const StatusIcon = request.status === 'Approved' ? CheckCircleIcon : XCircleIcon;
-
-        return (
-            <tr key={request.id} className="bg-white hover:bg-gray-50">
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{request.id}</td>
-                <td className="px-6 py-3 text-sm font-medium text-gray-900">
-                    <Link to={`/books/${book?.id}`} className="hover:text-indigo-600">{book?.title || 'N/A'}</Link>
-                </td>
-                <td className="px-6 py-3 whitespace-nowrap text-sm">
-                    <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}`}>
-                        <StatusIcon className="-ml-0.5 mr-1 h-4 w-4" /> {request.status}
-                    </span>
-                </td>
-                <td className="px-6 py-3 text-sm text-gray-500 max-w-xs break-words">{request.remarks || '-'}</td>
-                <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">{reviewedBy?.username || 'N/A'}</td>
-                <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">{request.reviewed_at ? new Date(request.reviewed_at).toLocaleString() : 'N/A'}</td>
-                 <td className="px-6 py-3 whitespace-nowLrap text-sm text-gray-500">{request.submitted_by?.username || 'N/A'}</td>
-            </tr>
-        );
-    };
-
-    // --- JSX Rendering ---
     return (
-        <div className="management-container p-4 md:p-6 space-y-6">
-            <h2 className="text-2xl md:text-3xl font-semibold text-gray-700">✅ Approval Management</h2>
+        <div className="min-h-screen bg-[#F8FAFC] p-6 font-sans text-slate-800">
+            <Toaster position="top-right" />
 
-            {isLoading && <p className="text-center text-gray-500 py-4">Loading requests...</p>}
-            {error && <p className="error-message p-3 bg-red-100 border border-red-300 text-red-700 text-sm rounded-md text-center">{error}</p>}
+            <div className="max-w-7xl mx-auto space-y-8">
+                
+                {/* 1. Header & Stats */}
+                <div className="space-y-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                        <div>
+                            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Approvals</h1>
+                            <p className="text-slate-500 font-medium">Review and manage book submission requests</p>
+                        </div>
+                        <button onClick={() => fetchRequests()} className="p-2 bg-white border border-slate-200 rounded-full text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all shadow-sm">
+                            <ArrowPathIcon className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+                        </button>
+                    </div>
 
-            {/* --- Tabs --- */}
-            <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-                    <button
-                        className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm focus:outline-none ${activeTab === 'pending' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                        onClick={() => setActiveTab('pending')}
-                        disabled={isLoading}
-                    >
-                        Pending ({(pendingRequests || []).length}) {/* Safe access */}
-                    </button>
-                    <button
-                         className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm focus:outline-none ${activeTab === 'reviewed' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                        onClick={() => setActiveTab('reviewed')}
-                        disabled={isLoading}
-                    >
-                         {/* Safe access */}
-                         Reviewed ({(filteredReviewedRequests || []).length}{reviewedSearchTerm ? ` / ${((allRequests || []).length - (pendingRequests || []).length)}` : ''})
-                    </button>
-                </nav>
-            </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <StatCard title="Pending Review" value={pendingRequests.length} icon={ClockIcon} colorClass="bg-amber-500 text-amber-500" />
+                        <StatCard title="Total Approved" value={allRequests.filter(r => r.status === 'Approved').length} icon={CheckCircleIcon} colorClass="bg-emerald-500 text-emerald-500" />
+                        <StatCard title="Total Rejected" value={allRequests.filter(r => r.status === 'Rejected').length} icon={XCircleIcon} colorClass="bg-red-500 text-red-500" />
+                    </div>
+                </div>
 
-            {/* --- Tab Content --- */}
-            <div className="mt-6">
-                <AnimatePresence mode="wait">
-                    {activeTab === 'pending' && (
-                        <motion.div key="pending" variants={tabContentVariants} initial="hidden" animate="visible" exit="exit" className="pending-requests-list space-y-4">
-                            <h3 className="sr-only">Pending Requests</h3>
-                            {!isLoading && (pendingRequests || []).length === 0 && (
-                                <div className="text-center py-10 bg-white rounded-lg shadow-sm border border-gray-200">
-                                    <CheckCircleIcon className="mx-auto h-12 w-12 text-green-400" />
-                                    <h4 className="mt-2 text-sm font-medium text-gray-900">All caught up!</h4>
-                                    <p className="mt-1 text-sm text-gray-500">No requests are currently pending review.</p>
-                                </div>
-                            )}
-                             <AnimatePresence initial={false}>
-                                {(pendingRequests || []).map(renderRequestCard)}
-                             </AnimatePresence>
-                        </motion.div>
-                    )}
+                {/* 2. Controls & Tabs */}
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                        <button 
+                            onClick={() => { setActiveTab('pending'); setCurrentPage(1); }}
+                            className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'pending' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Pending <span className="ml-1 opacity-60 text-xs">({pendingRequests.length})</span>
+                        </button>
+                        <button 
+                            onClick={() => { setActiveTab('history'); setCurrentPage(1); }}
+                            className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'history' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            History <span className="ml-1 opacity-60 text-xs">({historyRequests.length})</span>
+                        </button>
+                    </div>
 
-                    {activeTab === 'reviewed' && (
-                         <motion.div key="reviewed" variants={tabContentVariants} initial="hidden" animate="visible" exit="exit" className="reviewed-requests-list space-y-4">
-                            <h3 className="sr-only">Reviewed Requests</h3>
-                            <div className="flex justify-between items-center gap-4 mb-4">
-                                <div className="relative flex-grow max-w-lg">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><MagnifyingGlassIcon className="h-5 w-5 text-gray-400"/></div>
-                                    <input type="text" placeholder="Search Reviewed (Title, User, Status...)" value={reviewedSearchTerm} onChange={(e) => setReviewedSearchTerm(e.target.value)} className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md bg-white placeholder-gray-500 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" disabled={isLoading}/>
-                                </div>
-                                 
-                                 {/* * --- YAHAN FIX KIYA GAYA ---
-                                  * Aapka error 'fetchData is not defined' yahan se aa raha tha.
-                                  * Aapke function ka naam 'fetchRequests' hai.
-                                  * Maine onClick={fetchData} ko onClick={fetchRequests} se badal diya hai.
-                                 */}
-                                 <button 
-                                    onClick={fetchRequests} 
-                                    disabled={isLoading} 
-                                    className="refresh-button inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    <div className="relative w-full md:w-64">
+                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input 
+                            type="text" 
+                            placeholder="Search books or users..." 
+                            className="w-full pl-9 pr-4 py-2 bg-transparent text-sm font-medium focus:outline-none placeholder:text-slate-400"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                {/* 3. Content Area */}
+                <div className="min-h-[400px]">
+                    {isLoading ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+                            {Array(4).fill(0).map((_, i) => <Skeleton key={i} height={160} borderRadius={16} />)}
+                        </div>
+                    ) : (
+                        <AnimatePresence mode="wait">
+                            {activeTab === 'pending' ? (
+                                displayData.length === 0 ? (
+                                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
+                                        <DocumentCheckIcon className="w-16 h-16 text-emerald-100 mx-auto mb-4" />
+                                        <h3 className="text-lg font-bold text-slate-800">All Caught Up!</h3>
+                                        <p className="text-slate-500">No pending requests at the moment.</p>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div 
+                                        key="pending-grid"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                                    >
+                                        {paginatedData.map(renderPendingCard)}
+                                    </motion.div>
+                                )
+                            ) : (
+                                <motion.div 
+                                    key="history-table"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
                                 >
-                                    <ArrowPathIcon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
-                                </button>
-                            </div>
-
-                            {!isLoading && (filteredReviewedRequests || []).length === 0 && (
-                                 <p className="text-center text-gray-500 py-6">{reviewedSearchTerm ? 'No reviewed requests match your search.' : 'No requests have been reviewed yet.'}</p>
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs tracking-wider">
+                                            <tr>
+                                                <th className="px-6 py-4">Book Title</th>
+                                                <th className="px-6 py-4">Submitted By</th>
+                                                <th className="px-6 py-4">Status</th>
+                                                <th className="px-6 py-4">Reviewed By</th>
+                                                <th className="px-6 py-4">Date</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {paginatedData.map((req) => (
+                                                <tr key={req.id} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="px-6 py-4 font-bold text-slate-700">{req.book?.title}</td>
+                                                    <td className="px-6 py-4 text-slate-500">{req.submitted_by?.username}</td>
+                                                    <td className="px-6 py-4"><StatusBadge status={req.status} /></td>
+                                                    <td className="px-6 py-4 text-slate-500">
+                                                        {req.reviewed_by?.username || req.reviewed_by?.full_name || "System"}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-slate-400 font-mono text-xs">
+                                                        {new Date(req.reviewed_at || req.submitted_at).toLocaleDateString()}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {paginatedData.length === 0 && (
+                                                <tr><td colSpan="5" className="p-8 text-center text-slate-400">No records found.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </motion.div>
                             )}
-
-                            {!isLoading && (filteredReviewedRequests || []).length > 0 && (
-                                <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
-                                    <div className="table-responsive">
-                                        <table className="min-w-full divide-y divide-gray-200">
-                                            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Req#</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reviewed By</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reviewed At</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted By</th></tr></thead>
-                                            <tbody className="bg-white divide-y divide-gray-200">
-                                                {paginatedReviewedRequests.map(renderReviewedRow)}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    {reviewedTotalPages > 1 && (
-                                        <div className="pagination-controls bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-                                            <div className="flex-1 flex justify-between sm:hidden">
-                                                <button onClick={goToPreviousReviewedPage} disabled={reviewedCurrentPage === 1 || isLoading} className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"> Previous </button>
-                                                <button onClick={goToNextReviewedPage} disabled={reviewedCurrentPage === reviewedTotalPages || isLoading} className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"> Next </button>
-                                            </div>
-                                            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                                                <div><p className="text-sm text-gray-700">Showing <span className="font-medium">{(reviewedCurrentPage - 1) * reviewedItemsPerPage + 1}</span> to <span className="font-medium">{Math.min(reviewedCurrentPage * reviewedItemsPerPage, filteredReviewedRequests.length)}</span> of <span className="font-medium">{filteredReviewedRequests.length}</span> results</p></div>
-                                                <div><nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination"><button onClick={goToPreviousReviewedPage} disabled={reviewedCurrentPage === 1 || isLoading} className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">Prev</button><button onClick={goToNextReviewedPage} disabled={reviewedCurrentPage === reviewedTotalPages || isLoading} className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50">Next</button></nav></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </motion.div>
+                        </AnimatePresence>
                     )}
-                </AnimatePresence>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                        <div className="flex justify-center mt-8 gap-2">
+                            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="px-4 py-2 border rounded-lg text-sm font-bold disabled:opacity-50">Prev</button>
+                            <span className="px-4 py-2 text-sm font-medium text-slate-500">Page {currentPage} of {totalPages}</span>
+                            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="px-4 py-2 border rounded-lg text-sm font-bold disabled:opacity-50">Next</button>
+                        </div>
+                    )}
+                </div>
             </div>
+
+            {/* 4. Preview Modal (Updated for Cloudinary) */}
+            <AnimatePresence>
+                {previewBook && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+                        <motion.div 
+                            initial={{ scale: 0.95, opacity: 0 }} 
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-white w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+                        >
+                            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                    <DocumentTextIcon className="w-5 h-5 text-indigo-600" />
+                                    Reviewing: {previewBook.book?.title}
+                                </h3>
+                                <div className="flex gap-2">
+                                    {/* ✅ Added Safety Button: Open in New Tab if iframe fails */}
+                                    {getStaticUrl(previewBook.book?.pdf_file || previewBook.book?.pdf_url) && (
+                                        <a 
+                                            href={getStaticUrl(previewBook.book?.pdf_file || previewBook.book?.pdf_url)} 
+                                            target="_blank" 
+                                            rel="noreferrer"
+                                            className="p-2 hover:bg-slate-200 rounded-full text-slate-500 flex items-center gap-1 text-xs font-bold"
+                                            title="Open PDF in new tab"
+                                        >
+                                            <ArrowTopRightOnSquareIcon className="w-5 h-5" />
+                                            Open PDF
+                                        </a>
+                                    )}
+                                    <button onClick={() => setPreviewBook(null)} className="p-2 hover:bg-slate-200 rounded-full"><XMarkIcon className="w-5 h-5 text-slate-500" /></button>
+                                </div>
+                            </div>
+                            
+                            <div className="flex-1 bg-slate-200 relative">
+                                {getStaticUrl(previewBook.book?.pdf_file || previewBook.book?.pdf_url) ? (
+                                    <iframe 
+                                        src={getStaticUrl(previewBook.book?.pdf_file || previewBook.book?.pdf_url)} 
+                                        className="w-full h-full" 
+                                        title="PDF Preview"
+                                    />
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-slate-400 gap-2">
+                                        <ExclamationTriangleIcon className="w-6 h-6" /> PDF Not Available
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="p-4 bg-white border-t border-slate-100 flex justify-end gap-3">
+                                <button onClick={() => handleAction(previewBook.id, 'Rejected', 'Rejected from preview')} className="px-5 py-2.5 border border-red-200 text-red-600 font-bold rounded-xl hover:bg-red-50">Reject</button>
+                                <button onClick={() => handleAction(previewBook.id, 'Approved', 'Approved from preview')} className="px-5 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-lg">Approve Content</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

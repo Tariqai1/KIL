@@ -1,448 +1,488 @@
-// src/pages/CopiesIssuing.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { copyIssueService } from '../api/copyIssueService'; // Assuming this service exists
+import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
+import { 
+    PlusIcon, ArrowPathIcon, MagnifyingGlassIcon, 
+    CheckCircleIcon, BookOpenIcon, UserCircleIcon, 
+    CalendarIcon, ArrowDownTrayIcon 
+} from '@heroicons/react/20/solid';
+
+// --- API Services ---
+import { copyIssueService } from '../api/copyIssueService';
 import { bookService } from '../api/bookService';
 import { locationService } from '../api/locationService';
-import { userService } from '../api/userService'; // Assuming this service exists
-import { motion, AnimatePresence } from 'framer-motion';
-import { PlusIcon, ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons/react/20/solid';
-// Make sure these CSS files exist at these paths
-import '../assets/css/ManagementPages.css';
-import '../assets/css/CopiesIssuing.css'; // Optional: for specific styling
+import { userService } from '../api/userService';
 
-// Helper to format date for input (YYYY-MM-DD)
-const formatDateForInput = (isoDateStringOrDate) => {
-    if (!isoDateStringOrDate) return '';
-    try {
-        const date = new Date(isoDateStringOrDate);
-        // Adjust for timezone offset to get local date correct for input[type=date]
-        const offset = date.getTimezoneOffset();
-        const adjustedDate = new Date(date.getTime() - (offset * 60 * 1000));
-        return adjustedDate.toISOString().split('T')[0];
-    } catch (e) {
-        console.error("Error formatting date:", e);
-        return '';
-    }
+// ==========================================
+// 1. INTERNAL HELPER COMPONENTS
+// ==========================================
+
+// --- Simple Skeleton Loader ---
+const TableSkeleton = () => (
+    <div className="animate-pulse space-y-4">
+        {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-12 bg-gray-100 rounded-lg w-full"></div>
+        ))}
+    </div>
+);
+
+// --- Visual Book Card (Light Theme) ---
+const BookCard = ({ book, type = 'book' }) => {
+    if (!book) return null;
+    const isBook = type === 'book';
+    
+    // Construct Image URL safely
+    const BASE_URL = "http://localhost:8000"; 
+    const imgUrl = book.cover_image_url 
+        ? (book.cover_image_url.startsWith('http') ? book.cover_image_url : `${BASE_URL}/${book.cover_image_url}`)
+        : null;
+
+    return (
+        <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="mt-4 flex gap-4 p-4 bg-blue-50/50 border border-blue-100 rounded-xl">
+            {/* Image / Icon */}
+            <div className="w-16 h-20 flex-shrink-0 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden shadow-sm">
+                {isBook && imgUrl ? (
+                    <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                    isBook ? <BookOpenIcon className="w-8 h-8 text-blue-300" /> : <UserCircleIcon className="w-10 h-10 text-indigo-300"/>
+                )}
+            </div>
+            
+            {/* Details */}
+            <div className="flex-1 min-w-0">
+                <h4 className="font-bold text-gray-900 truncate">
+                    {isBook ? book.title : book.username}
+                </h4>
+                <p className="text-sm text-gray-500 truncate">
+                    {isBook ? (book.author || 'Unknown Author') : (book.full_name || 'Library Member')}
+                </p>
+                {isBook && (
+                    <div className="mt-1 flex gap-2">
+                        <span className="text-xs px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600 font-mono">
+                            ISBN: {book.isbn || 'N/A'}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600">
+                            Edition: {book.edition || '1st'}
+                        </span>
+                    </div>
+                )}
+                 {!isBook && (
+                    <div className="mt-1">
+                        <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-bold">
+                            {book.role?.name || 'Student'}
+                        </span>
+                    </div>
+                )}
+            </div>
+            
+            {/* Status Icon */}
+            <div className="flex items-start">
+                <CheckCircleIcon className="w-6 h-6 text-emerald-500" />
+            </div>
+        </motion.div>
+    );
 };
 
-// Animation variants
-const tabContentVariants = {
-    hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
-    exit: { opacity: 0, y: -5, transition: { duration: 0.15, ease: 'easeIn' } }
+// --- Status Badge ---
+const StatusBadge = ({ status }) => {
+    const s = status?.toLowerCase();
+    const styles = {
+        available: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+        issued: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+        returned: 'bg-blue-50 text-blue-700 ring-blue-600/20',
+        lost: 'bg-red-50 text-red-700 ring-red-600/20',
+    };
+    return (
+        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${styles[s] || 'bg-gray-50 text-gray-600 ring-gray-500/10'}`}>
+            {status}
+        </span>
+    );
 };
+
+// ==========================================
+// 2. LOGIC HOOKS
+// ==========================================
+
+const useDataTable = (data, searchKeys, itemsPerPage = 8) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+
+    const filteredData = useMemo(() => {
+        if (!searchTerm) return data;
+        const lowerSearch = searchTerm.toLowerCase();
+        return data.filter(item => 
+            searchKeys.some(key => {
+                const value = key.split('.').reduce((obj, k) => (obj ? obj[k] : null), item);
+                return String(value || '').toLowerCase().includes(lowerSearch);
+            })
+        );
+    }, [data, searchTerm, searchKeys]);
+
+    const paginatedData = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredData.slice(start, start + itemsPerPage);
+    }, [filteredData, currentPage, itemsPerPage]);
+
+    const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+    useEffect(() => setCurrentPage(1), [searchTerm]);
+
+    return { searchTerm, setSearchTerm, currentPage, setCurrentPage, paginatedData, totalPages, totalCount: filteredData.length };
+};
+
+// ==========================================
+// 3. TAB COMPONENTS
+// ==========================================
+
+// --- Inventory Tab (UPDATED) ---
+const InventoryTab = ({ books, locations, copies, loading, onAddCopy }) => {
+    const [newCopy, setNewCopy] = useState({ book_id: '', location_id: '' });
+    const table = useDataTable(copies, ['id', 'book.title', 'location.name', 'status']);
+
+    const selectedBook = useMemo(() => books.find(b => b.id === parseInt(newCopy.book_id)), [newCopy.book_id, books]);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onAddCopy(newCopy, () => setNewCopy({ book_id: '', location_id: '' }));
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Add Section */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4 flex items-center gap-2">
+                    <PlusIcon className="w-5 h-5 text-indigo-600"/> Add New Copy
+                </h3>
+                <form onSubmit={handleSubmit}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Select Book</label>
+                            <select className="w-full rounded-lg border-gray-300 text-sm focus:ring-indigo-500 focus:border-indigo-500 shadow-sm py-2.5"
+                                value={newCopy.book_id} onChange={e => setNewCopy({...newCopy, book_id: e.target.value})} required disabled={loading}>
+                                <option value="">Choose a book...</option>
+                                {books.map(b => <option key={b.id} value={b.id}>{b.title}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Storage Location</label>
+                            <select className="w-full rounded-lg border-gray-300 text-sm focus:ring-indigo-500 focus:border-indigo-500 shadow-sm py-2.5"
+                                value={newCopy.location_id} onChange={e => setNewCopy({...newCopy, location_id: e.target.value})} required disabled={loading}>
+                                <option value="">Select Location...</option>
+                                {/* ✅ FIX: Showing Rack and Shelf Details */}
+                                {locations.map(l => (
+                                    <option key={l.id} value={l.id}>
+                                        {l.name} — Rack: {l.rack || 'N/A'}, Shelf: {l.shelf || 'N/A'}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    {/* Visual Card */}
+                    {selectedBook && <BookCard book={selectedBook} type="book" />}
+                    
+                    <div className="mt-4 flex justify-end">
+                        <button type="submit" disabled={loading} className="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50">
+                            {loading ? 'Adding...' : 'Add to Inventory'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            {/* List Section */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 className="font-semibold text-gray-700">All Copies ({table.totalCount})</h3>
+                    <div className="relative">
+                        <MagnifyingGlassIcon className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                        <input type="text" placeholder="Search..." className="pl-9 pr-3 py-1.5 text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                            value={table.searchTerm} onChange={e => table.setSearchTerm(e.target.value)} />
+                    </div>
+                </div>
+                {loading && !copies.length ? (
+                    <div className="p-6"><TableSkeleton /></div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">ID</th>
+                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Book Title</th>
+                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Location</th>
+                                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {table.paginatedData.map(copy => (
+                                    <tr key={copy.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 text-sm font-mono text-gray-500">#{copy.id}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-900 font-medium">{copy.book?.title}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-500">
+                                            {/* ✅ FIX: Showing Full Location Details in Table */}
+                                            {copy.location ? (
+                                                <span>
+                                                    {copy.location.name} 
+                                                    <span className="text-xs text-gray-400 ml-1">
+                                                        ({copy.location.rack || '-'}/{copy.location.shelf || '-'})
+                                                    </span>
+                                                </span>
+                                            ) : 'N/A'}
+                                        </td>
+                                        <td className="px-6 py-4"><StatusBadge status={copy.status} /></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                <PaginationControls table={table} />
+            </div>
+        </div>
+    );
+};
+
+// --- Issuing Tab ---
+const IssuingTab = ({ copies, users, loading, onIssueBook }) => {
+    const [issueData, setIssueData] = useState({ copy_id: '', client_id: '', due_date: new Date(Date.now() + 12096e5).toISOString().split('T')[0] });
+
+    const availableCopies = useMemo(() => copies.filter(c => c.status === 'Available'), [copies]);
+    
+    // Find details for cards
+    const selectedCopyBook = useMemo(() => copies.find(c => c.id === parseInt(issueData.copy_id))?.book, [issueData.copy_id, copies]);
+    const selectedUser = useMemo(() => users.find(u => u.id === parseInt(issueData.client_id)), [issueData.client_id, users]);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onIssueBook(issueData, () => setIssueData(prev => ({ ...prev, copy_id: '', client_id: '' })));
+    };
+
+    return (
+        <div className="max-w-4xl mx-auto">
+            <div className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
+                    <div className="p-2 bg-indigo-50 rounded-lg"><BookOpenIcon className="w-6 h-6 text-indigo-600"/></div>
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-900">Issue a Book</h2>
+                        <p className="text-sm text-gray-500">Assign a physical copy to a student or faculty member.</p>
+                    </div>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Copy Selection */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Select Available Copy</label>
+                            <select className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5"
+                                value={issueData.copy_id} onChange={e => setIssueData({...issueData, copy_id: e.target.value})} required disabled={loading}>
+                                <option value="">-- Select Copy --</option>
+                                {availableCopies.map(c => <option key={c.id} value={c.id}>#{c.id} - {c.book?.title}</option>)}
+                            </select>
+                            <p className="mt-1 text-xs text-emerald-600 font-medium">{availableCopies.length} copies available.</p>
+                        </div>
+                        
+                        {/* User Selection */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Select Member</label>
+                            <select className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5"
+                                value={issueData.client_id} onChange={e => setIssueData({...issueData, client_id: e.target.value})} required disabled={loading}>
+                                <option value="">-- Select User --</option>
+                                {users.map(u => <option key={u.id} value={u.id}>{u.username} ({u.full_name})</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Date Selection */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <CalendarIcon className="h-5 w-5 text-gray-400" />
+                            </div>
+                            <input type="date" className="pl-10 w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5"
+                                value={issueData.due_date} onChange={e => setIssueData({...issueData, due_date: e.target.value})} required disabled={loading} />
+                        </div>
+                    </div>
+
+                    {/* Visual Confirmations */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {selectedCopyBook && <BookCard book={selectedCopyBook} type="book" />}
+                        {selectedUser && <BookCard book={selectedUser} type="user" />}
+                    </div>
+
+                    <div className="pt-4 border-t border-gray-100">
+                        <button type="submit" disabled={loading || availableCopies.length === 0} 
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg shadow-sm transition-all active:scale-[0.99] disabled:opacity-50">
+                            {loading ? 'Processing...' : 'Confirm Issue'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// --- Returns Tab ---
+const ReturnsTab = ({ issues, loading, onReturnBook }) => {
+    const [returnId, setReturnId] = useState('');
+    const activeIssues = useMemo(() => issues.filter(i => i.status === 'Issued'), [issues]);
+    const table = useDataTable(issues, ['id', 'book_copy.book.title', 'client.username', 'status']);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onReturnBook(returnId, () => setReturnId(''));
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4 flex items-center gap-2">
+                    <ArrowDownTrayIcon className="w-5 h-5 text-orange-600"/> Quick Return
+                </h3>
+                <form onSubmit={handleSubmit} className="flex gap-4 items-end">
+                    <div className="flex-grow">
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Select Issued Book</label>
+                        <select className="w-full rounded-lg border-gray-300 text-sm focus:ring-orange-500 focus:border-orange-500 py-2.5"
+                            value={returnId} onChange={e => setReturnId(e.target.value)} required disabled={loading}>
+                            <option value="">Choose item to return...</option>
+                            {activeIssues.map(i => (
+                                <option key={i.id} value={i.id}>
+                                    #{i.id} - {i.book_copy?.book?.title} (User: {i.client?.username})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <button type="submit" disabled={loading} className="bg-orange-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-orange-700 shadow-sm disabled:opacity-50">
+                        Return Book
+                    </button>
+                </form>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 className="font-semibold text-gray-700">Circulation History</h3>
+                    <input type="text" placeholder="Search history..." className="px-3 py-1.5 text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                            value={table.searchTerm} onChange={e => table.setSearchTerm(e.target.value)} />
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Issue ID</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Book</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Issued To</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Due Date</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {table.paginatedData.map(issue => (
+                                <tr key={issue.id} className="hover:bg-gray-50">
+                                    <td className="px-6 py-4 text-sm font-mono text-gray-500">#{issue.id}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                                        {issue.book_copy?.book?.title}
+                                        <span className="block text-xs text-gray-500">Copy ID: #{issue.copy_id}</span>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-indigo-600">{issue.client?.username}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-500">{issue.due_date}</td>
+                                    <td className="px-6 py-4"><StatusBadge status={issue.status} /></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <PaginationControls table={table} />
+            </div>
+        </div>
+    );
+};
+
+// --- Pagination Controls ---
+const PaginationControls = ({ table }) => (
+    table.totalPages > 1 && (
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-between items-center bg-gray-50">
+            <button onClick={() => table.setCurrentPage(p => Math.max(1, p - 1))} disabled={table.currentPage === 1} 
+                className="text-xs font-medium text-gray-500 hover:text-indigo-600 disabled:opacity-50">Previous</button>
+            <span className="text-xs text-gray-500">Page {table.currentPage} of {table.totalPages}</span>
+            <button onClick={() => table.setCurrentPage(p => Math.min(table.totalPages, p + 1))} disabled={table.currentPage === table.totalPages} 
+                className="text-xs font-medium text-gray-500 hover:text-indigo-600 disabled:opacity-50">Next</button>
+        </div>
+    )
+);
+
+// ==========================================
+// 4. MAIN COMPONENT
+// ==========================================
 
 const CopiesIssuing = () => {
-    // --- State Variables ---
-    const [allCopies, setAllCopies] = useState([]);
-    const [allIssues, setAllIssues] = useState([]);
-    const [books, setBooks] = useState([]); // Will contain ALL books now
-    const [locations, setLocations] = useState([]);
-    const [users, setUsers] = useState([]);
+    const [data, setData] = useState({ copies: [], issues: [], books: [], locations: [], users: [] });
+    const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState('copies');
 
-    // --- UI States ---
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null); // For critical data load errors
-    const [actionError, setActionError] = useState(null); // For form submission errors
-    const [successMessage, setSuccessMessage] = useState(null);
-    const [activeTab, setActiveTab] = useState('copies'); // Default tab
-
-    // --- Form States ---
-    const [newCopyData, setNewCopyData] = useState({ book_id: '', location_id: '' });
-    const [issueData, setIssueData] = useState({ copy_id: '', client_id: '', due_date: '' });
-    const [returnIssueId, setReturnIssueId] = useState(''); // Stores the ID of the issue record to return
-
-    // --- Search & Pagination States ---
-    const [copySearchTerm, setCopySearchTerm] = useState('');
-    const [copyCurrentPage, setCopyCurrentPage] = useState(1);
-    const [copyItemsPerPage] = useState(10);
-    const [issueSearchTerm, setIssueSearchTerm] = useState('');
-    const [issueCurrentPage, setIssueCurrentPage] = useState(1);
-    const [issueItemsPerPage] = useState(10);
-
-    // --- Data Fetching ---
     const fetchData = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        setActionError(null);
-        setSuccessMessage(null);
+        setLoading(true);
         try {
-            // Fetch all data concurrently, handle individual errors
-            const [copiesRes, issuesRes, booksRes, locationsRes, usersRes] = await Promise.allSettled([
+            const [copies, issues, books, locations, users] = await Promise.all([
                 copyIssueService.getAllCopies(),
                 copyIssueService.getAllIssues(),
-                // --- FIX: Fetch ALL books (approved: false) for the Add Copy dropdown ---
                 bookService.getAllBooks(false),
-                // --- END FIX ---
                 locationService.getAllLocations(),
                 userService.getAllUsers()
             ]);
-
-            // Process results, setting state or logging errors
-            if (copiesRes.status === 'fulfilled') setAllCopies(copiesRes.value || []);
-            else console.error("Failed to load copies:", copiesRes.reason);
-
-            if (issuesRes.status === 'fulfilled') setAllIssues(issuesRes.value || []);
-            else console.error("Failed to load issues:", issuesRes.reason);
-
-            if (booksRes.status === 'fulfilled') setBooks(booksRes.value || []);
-            else console.error("Failed to load books:", booksRes.reason);
-
-            if (locationsRes.status === 'fulfilled') setLocations(locationsRes.value || []);
-            else console.error("Failed to load locations:", locationsRes.reason);
-
-            if (usersRes.status === 'fulfilled') setUsers(usersRes.value || []);
-            else console.error("Failed to load users:", usersRes.reason);
-
-            // Set default due date (e.g., two weeks from now)
-            const twoWeeksFromNow = new Date();
-            twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
-            setIssueData(prev => ({ ...prev, due_date: formatDateForInput(twoWeeksFromNow) }));
-
-            // Reset pagination on full refresh
-            setCopyCurrentPage(1);
-            setIssueCurrentPage(1);
-
-            // Set overall error only if critical data (e.g., copies) failed
-            if (copiesRes.status === 'rejected') {
-                 setError(copiesRes.reason?.detail || 'Could not fetch book copies.');
-            }
-
-        } catch (err) { // Catch unexpected errors during Promise.allSettled itself
-            setError('An unexpected error occurred while fetching data.');
-            console.error("General fetch data error:", err);
+            setData({ copies: copies || [], issues: issues || [], books: books || [], locations: locations || [], users: users || [] });
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to load data.");
         } finally {
-            setIsLoading(false);
+            setLoading(false);
         }
-    }, []); // Empty dependency array means this useCallback instance is stable
+    }, []);
 
-    useEffect(() => {
-        fetchData(); // Fetch data on component mount
-    }, [fetchData]); // Dependency array includes fetchData
+    useEffect(() => { fetchData(); }, [fetchData]);
 
-    // --- Filtering & Pagination ---
-    // Filter copies based on search term
-    const filteredCopies = useMemo(() => {
-        if (!copySearchTerm) return allCopies || [];
-        const lowerCaseSearch = copySearchTerm.toLowerCase();
-        return (allCopies || []).filter(copy =>
-            (copy.book?.title?.toLowerCase().includes(lowerCaseSearch)) ||
-            (copy.id?.toString().includes(lowerCaseSearch)) ||
-            (copy.location?.name?.toLowerCase().includes(lowerCaseSearch)) ||
-            (copy.status?.toLowerCase().includes(lowerCaseSearch)) // Search status too
-        );
-    }, [allCopies, copySearchTerm]);
-
-    // Paginate filtered copies
-    const paginatedCopies = useMemo(() => {
-        const startIndex = (copyCurrentPage - 1) * copyItemsPerPage;
-        return filteredCopies.slice(startIndex, startIndex + copyItemsPerPage);
-    }, [filteredCopies, copyCurrentPage, copyItemsPerPage]);
-
-    const copyTotalPages = useMemo(() => Math.ceil(filteredCopies.length / copyItemsPerPage), [filteredCopies, copyItemsPerPage]);
-    useEffect(() => { setCopyCurrentPage(1); }, [copySearchTerm]); // Reset page on search
-    const goToNextCopyPage = () => setCopyCurrentPage((p) => Math.min(p + 1, copyTotalPages));
-    const goToPreviousCopyPage = () => setCopyCurrentPage((p) => Math.max(p - 1, 1));
-
-    // Get currently issued items
-    const currentlyIssuedItems = useMemo(() => (allIssues || []).filter(issue => issue.status?.toLowerCase() === 'issued'), [allIssues]); // Use lowercase for safety
-
-    // Filter issued items based on search term
-    const filteredIssuedItems = useMemo(() => {
-        if (!issueSearchTerm) return currentlyIssuedItems;
-        const lowerCaseSearch = issueSearchTerm.toLowerCase();
-        return currentlyIssuedItems.filter(issue =>
-            issue.id?.toString().includes(lowerCaseSearch) ||
-            issue.copy_id?.toString().includes(lowerCaseSearch) ||
-            (issue.book_copy?.book?.title?.toLowerCase().includes(lowerCaseSearch)) ||
-            (issue.client?.username?.toLowerCase().includes(lowerCaseSearch))
-        );
-    }, [currentlyIssuedItems, issueSearchTerm]);
-
-    // Paginate filtered issued items
-    const paginatedIssuedItems = useMemo(() => {
-        const startIndex = (issueCurrentPage - 1) * issueItemsPerPage;
-        return filteredIssuedItems.slice(startIndex, startIndex + issueItemsPerPage);
-    }, [filteredIssuedItems, issueCurrentPage, issueItemsPerPage]);
-
-    const issueTotalPages = useMemo(() => Math.ceil(filteredIssuedItems.length / issueItemsPerPage), [filteredIssuedItems, issueItemsPerPage]);
-    useEffect(() => { setIssueCurrentPage(1); }, [issueSearchTerm]); // Reset page on search
-    const goToNextIssuePage = () => setIssueCurrentPage((p) => Math.min(p + 1, issueTotalPages));
-    const goToPreviousIssuePage = () => setIssueCurrentPage((p) => Math.max(p - 1, 1));
-
-    // --- Action Handlers ---
-    const handleCopyInputChange = (e) => setNewCopyData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    const handleIssueInputChange = (e) => setIssueData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    const handleReturnInputChange = (e) => setReturnIssueId(e.target.value);
-
-    // Add a new book copy
-    const handleAddCopy = async (e) => {
-        e.preventDefault();
-        if (!newCopyData.book_id || !newCopyData.location_id) { setActionError('Please select both a book and a location.'); return; }
-        setActionError(null); setSuccessMessage(null); setIsLoading(true); // Indicate loading
+    const handleAction = async (apiPromise, successMsg, resetCb) => {
+        const toastId = toast.loading("Processing...");
         try {
-            // Convert IDs to numbers before sending
-            await copyIssueService.createCopy({
-                book_id: parseInt(newCopyData.book_id),
-                location_id: parseInt(newCopyData.location_id)
-            });
-            setSuccessMessage('Book copy added successfully!');
-            setNewCopyData({ book_id: '', location_id: '' }); // Reset form
-            fetchData(); // Refresh all data including copies list
+            await apiPromise;
+            toast.success(successMsg, { id: toastId });
+            if (resetCb) resetCb();
+            fetchData();
         } catch (err) {
-            setActionError(err.detail || 'Failed to add book copy.');
-            setIsLoading(false); // Stop loading on error
-        }
-        // setIsLoading(false) will be handled by fetchData's finally block if successful
-    };
-
-    // Issue a book copy to a user
-    const handleIssueBook = async (e) => {
-        e.preventDefault();
-        if (!issueData.copy_id || !issueData.client_id || !issueData.due_date) {
-            setActionError('Please select an available copy, a user, and set a due date.');
-            return;
-        }
-        setActionError(null); setSuccessMessage(null); setIsLoading(true);
-        try {
-            const payload = {
-                copy_id: parseInt(issueData.copy_id),
-                client_id: parseInt(issueData.client_id),
-                due_date: issueData.due_date // Already in YYYY-MM-DD format
-            };
-            await copyIssueService.issueBook(payload);
-            setSuccessMessage('Book issued successfully!');
-            // Reset form, keep default due date
-            const twoWeeks = new Date(); twoWeeks.setDate(twoWeeks.getDate() + 14);
-            setIssueData({ copy_id: '', client_id: '', due_date: formatDateForInput(twoWeeks) });
-            fetchData(); // Refresh all data including issues and copies status
-        } catch (err) {
-            setActionError(err.detail || 'Failed to issue book. Is the copy actually available? Check status.');
-            setIsLoading(false);
+            toast.error(err.response?.data?.detail || "Action failed", { id: toastId });
         }
     };
 
-    // Return an issued book
-    const handleReturnBook = async (e) => {
-        e.preventDefault();
-        if (!returnIssueId) { setActionError('Please select an issued item to return.'); return; }
-        setActionError(null); setSuccessMessage(null); setIsLoading(true);
-        try {
-            // The API likely needs the *issue ID*, not the copy ID
-            await copyIssueService.returnBook(parseInt(returnIssueId));
-            setSuccessMessage('Book marked as returned successfully!');
-            setReturnIssueId(''); // Reset selection
-            fetchData(); // Refresh all data including issues and copies status
-        } catch (err) {
-            setActionError(err.detail || 'Failed to return book.');
-            setIsLoading(false);
-        }
-    };
-
-    // Calculate available copies for the issue dropdown
-    const availableCopies = useMemo(() =>
-        // Ensure status check is case-insensitive and handles potential nulls/undefined
-        (allCopies || []).filter(copy => copy.status?.toLowerCase() === 'available'),
-        [allCopies]
-    );
-
-    // --- Tailwind Classes (Helpers) ---
-    const inputClass = "block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:opacity-50";
-    const labelClass = "block text-sm font-medium text-gray-700 mb-1";
-    const buttonClass = `inline-flex items-center justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 whitespace-nowrap`;
-    const primaryButtonClass = `${buttonClass} bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500`;
-    const successButtonClass = `${buttonClass} bg-green-600 hover:bg-green-700 focus:ring-green-500`;
-    const paginationButtonClass = "px-4 py-2 border border-gray-300 rounded-md bg-white text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed";
-
-    // --- JSX Rendering ---
     return (
-        <div className="management-container p-4 md:p-6 space-y-6">
-            <h2 className="text-2xl md:text-3xl font-semibold text-gray-700">📚 Copies & Issuing</h2>
-
-            {/* Global Error/Success Messages */}
-            {error && <p className="error-message p-3 bg-red-100 border border-red-300 text-red-700 text-sm rounded-md text-center">{error}</p>}
-            {successMessage && <p className="success-message p-3 bg-green-100 border border-green-300 text-green-700 text-sm rounded-md text-center">{successMessage}</p>}
-
-            {/* --- Tabs --- */}
-            <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
-                    {/* Manage Copies Tab Button */}
-                    <button
-                        className={`whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm focus:outline-none ${activeTab === 'copies' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                        onClick={() => setActiveTab('copies')} disabled={isLoading}
-                    >
-                        Manage Copies ({filteredCopies.length}{copySearchTerm ? ` / ${allCopies.length}` : ''})
-                    </button>
-                    {/* Issue Book Tab Button */}
-                    <button
-                        className={`whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm focus:outline-none ${activeTab === 'issue' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                        onClick={() => setActiveTab('issue')} disabled={isLoading}
-                    >
-                        Issue Book
-                    </button>
-                    {/* Return Book Tab Button */}
-                    <button
-                        className={`whitespace-nowrap py-3 px-4 border-b-2 font-medium text-sm focus:outline-none ${activeTab === 'return' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                        onClick={() => setActiveTab('return')} disabled={isLoading}
-                    >
-                        Return Book ({filteredIssuedItems.length}{issueSearchTerm ? ` / ${currentlyIssuedItems.length}` : ''} Out)
-                    </button>
-                </nav>
+        <div className="p-6 md:p-10 max-w-7xl mx-auto min-h-screen bg-gray-50">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Library Circulation</h1>
+                    <p className="text-sm text-gray-500 mt-1">Manage copies, issue books, and handle returns.</p>
+                </div>
+                <button onClick={fetchData} className="p-2 bg-white border border-gray-200 rounded-full text-gray-500 hover:text-indigo-600 hover:border-indigo-200 shadow-sm transition-all" title="Refresh">
+                    <ArrowPathIcon className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+                </button>
             </div>
 
-            {/* --- Tab Content --- */}
-            <div className="mt-6">
-                {isLoading && <p className="text-center text-gray-500 py-4">Loading data...</p>}
-
-                <AnimatePresence mode="wait">
-                    {/* --- Manage Copies Tab Content --- */}
-                    {activeTab === 'copies' && !isLoading && (
-                        <motion.div key="copies-tab" variants={tabContentVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
-                            {/* Add Copy Form */}
-                            <div className="add-copy-section form-section bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-                                <h3 className="text-lg font-medium text-gray-800 mb-4">Add New Book Copy</h3>
-                                {actionError && activeTab === 'copies' && <p className="error-message mb-4 text-sm text-red-600">{actionError}</p>}
-                                <form onSubmit={handleAddCopy} className="flex flex-col sm:flex-row gap-4 items-end flex-wrap">
-                                    <div className="form-group flex-grow w-full sm:w-auto min-w-[200px]">
-                                        <label htmlFor="book_id" className={labelClass}>Book *</label>
-                                        <select id="book_id" name="book_id" value={newCopyData.book_id} onChange={handleCopyInputChange} required className={inputClass} disabled={isLoading}>
-                                            <option value="">Select Book</option>
-                                            {/* Now iterates over ALL books */}
-                                            {(books || []).map(book => <option key={book.id} value={book.id}>{book.title} (ID: {book.id})</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="form-group flex-grow w-full sm:w-auto min-w-[200px]">
-                                        <label htmlFor="location_id" className={labelClass}>Location *</label>
-                                        <select id="location_id" name="location_id" value={newCopyData.location_id} onChange={handleCopyInputChange} required className={inputClass} disabled={isLoading}>
-                                            <option value="">Select Location</option>
-                                            {(locations || []).map(loc => <option key={loc.id} value={loc.id}>{loc.name} {loc.rack ? `(R:${loc.rack})` : ''} {loc.shelf ? `(S:${loc.shelf})` : ''}</option>)}
-                                        </select>
-                                    </div>
-                                    <button type="submit" className={`${primaryButtonClass} w-full sm:w-auto`} disabled={isLoading}>
-                                        <PlusIcon className="h-5 w-5 mr-1 inline-block" aria-hidden="true"/> Add Copy
-                                    </button>
-                                </form>
-                            </div>
-
-                            {/* List All Copies */}
-                            <div className="list-section bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-                                <div className="list-header flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-                                     <h3 className="text-lg font-medium text-gray-800">All Copies ({filteredCopies.length}{copySearchTerm ? ` / ${allCopies.length}` : ''})</h3>
-                                    <div className="relative flex-grow w-full sm:w-auto max-w-xs">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true"/></div>
-                                        <input type="text" placeholder="Search ID, Title, Location, Status..." value={copySearchTerm} onChange={(e) => setCopySearchTerm(e.target.value)} className={`${inputClass} pl-10`} disabled={isLoading}/>
-                                    </div>
-                                    <button onClick={fetchData} disabled={isLoading} className="refresh-button inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                                        <ArrowPathIcon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true"/> Refresh
-                                    </button>
-                                </div>
-
-                                {(filteredCopies && filteredCopies.length > 0) ? (
-                                    <>
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Copy ID</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book Title</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th></tr></thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
-                                                    {paginatedCopies.map(copy => {
-                                                        const statusClass = copy.status?.toLowerCase() === 'available' ? 'bg-green-100 text-green-800' : (copy.status?.toLowerCase() === 'on loan' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800');
-                                                        return (<tr key={copy.id} className="hover:bg-gray-50"><td className="px-4 py-4 text-sm text-gray-500">{copy.id}</td><td className="px-6 py-4 text-sm font-medium text-gray-900">{copy.book?.title || 'N/A'}</td><td className="px-6 py-4 text-sm text-gray-500">{copy.location?.name || 'N/A'}</td><td className="px-6 py-4 text-sm"><span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}`}>{copy.status || 'Unknown'}</span></td></tr>);
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        {copyTotalPages > 1 && (
-                                            <div className="pagination-controls mt-4 pt-4 border-t border-gray-200 flex justify-center items-center gap-4"><button onClick={goToPreviousCopyPage} disabled={copyCurrentPage === 1 || isLoading} className={paginationButtonClass}>Previous</button><span className="text-sm font-medium text-gray-700">Page {copyCurrentPage} of {copyTotalPages}</span><button onClick={goToNextCopyPage} disabled={copyCurrentPage === copyTotalPages || isLoading} className={paginationButtonClass}>Next</button></div>
-                                        )}
-                                    </>
-                                ) : ( <p className="text-center text-gray-500 py-6">{copySearchTerm ? 'No copies match your search.' : 'No copies found.'}</p> )}
-                            </div>
-                        </motion.div>
-                    )}
-
-                    {/* --- Issue Book Tab Content --- */}
-                    {activeTab === 'issue' && !isLoading && (
-                        <motion.div key="issue-tab" variants={tabContentVariants} initial="hidden" animate="visible" exit="exit" className="issue-book-section form-section bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-                            <h3 className="text-lg font-medium text-gray-800 mb-4">Issue Book to User</h3>
-                            {actionError && activeTab === 'issue' && <p className="error-message mb-4 text-sm text-red-600">{actionError}</p>}
-                            <form onSubmit={handleIssueBook} className="flex flex-col sm:flex-row gap-4 items-end flex-wrap">
-                                <div className="form-group flex-grow w-full sm:w-auto min-w-[200px]">
-                                    <label htmlFor="copy_id" className={labelClass}>Available Copy *</label>
-                                    <select id="copy_id" name="copy_id" value={issueData.copy_id} onChange={handleIssueInputChange} required className={inputClass} disabled={isLoading}>
-                                        <option value="">Select Available Copy</option>
-                                        {(availableCopies || []).map(copy => <option key={copy.id} value={copy.id}>ID: {copy.id} ({copy.book?.title || 'N/A'})</option>)}
-                                        {/* Show message if list is empty */}
-                                        {(availableCopies || []).length === 0 && <option disabled>No copies available</option>}
-                                    </select>
-                                </div>
-                                <div className="form-group flex-grow w-full sm:w-auto min-w-[200px]">
-                                    <label htmlFor="client_id" className={labelClass}>User *</label>
-                                    <select id="client_id" name="client_id" value={issueData.client_id} onChange={handleIssueInputChange} required className={inputClass} disabled={isLoading}>
-                                        <option value="">Select User</option>
-                                        {(users || []).map(user => <option key={user.id} value={user.id}>{user.username} ({user.full_name || user.fullName || 'No Name'})</option>)}
-                                    </select>
-                                </div>
-                                <div className="form-group w-full sm:w-auto">
-                                    <label htmlFor="due_date" className={labelClass}>Due Date *</label>
-                                    <input type="date" id="due_date" name="due_date" value={issueData.due_date} onChange={handleIssueInputChange} required className={inputClass} disabled={isLoading} />
-                                </div>
-                                <button type="submit" className={`${successButtonClass} w-full sm:w-auto`} disabled={isLoading}>Issue Book</button>
-                            </form>
-                        </motion.div>
-                    )}
-
-                    {/* --- Return Book Tab Content --- */}
-                    {activeTab === 'return' && !isLoading && (
-                        <motion.div key="return-tab" variants={tabContentVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
-                            {/* Return Form */}
-                            <div className="return-book-section form-section bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-gray-200">
-                                <h3 className="text-lg font-medium text-gray-800 mb-4">Return Issued Book</h3>
-                                {actionError && activeTab === 'return' && <p className="error-message mb-4 text-sm text-red-600">{actionError}</p>}
-                                <form onSubmit={handleReturnBook} className="flex flex-col sm:flex-row gap-4 items-end flex-wrap">
-                                    <div className="form-group flex-grow w-full sm:w-auto min-w-[300px]">
-                                        <label htmlFor="returnIssueId" className={labelClass}>Book on Loan *</label>
-                                        <select id="returnIssueId" name="returnIssueId" value={returnIssueId} onChange={handleReturnInputChange} required className={inputClass} disabled={isLoading}>
-                                            <option value="">Select Book to Return</option>
-                                            {/* Use currentlyIssuedItems for the dropdown */}
-                                            {(currentlyIssuedItems || []).map(issue => <option key={issue.id} value={issue.id}>#{issue.id} - {issue.book_copy?.book?.title || 'N/A'} (Copy: {issue.copy_id}, To: {issue.client?.username || 'N/A'})</option>)}
-                                            {(currentlyIssuedItems || []).length === 0 && <option disabled>No books currently issued</option>}
-                                        </select>
-                                    </div>
-                                    <button type="submit" className={`${primaryButtonClass} w-full sm:w-auto`} disabled={isLoading}>Mark as Returned</button>
-                                </form>
-                            </div>
-
-                            {/* List Currently Issued */}
-                            <div className="list-section bg-white p-4 sm:p-6 rounded-lg shadow-md border border-gray-200">
-                                <div className="list-header flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-                                    <h3 className="text-lg font-medium text-gray-800">Currently Issued ({filteredIssuedItems.length}{issueSearchTerm ? ` / ${currentlyIssuedItems.length}` : ''})</h3>
-                                    <div className="relative flex-grow w-full sm:w-auto max-w-xs">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true"/></div>
-                                        <input type="text" placeholder="Search Issue#, Copy#, Title, User..." value={issueSearchTerm} onChange={(e) => setIssueSearchTerm(e.target.value)} className={`${inputClass} pl-10`} disabled={isLoading}/>
-                                    </div>
-                                    <button onClick={fetchData} disabled={isLoading} className="refresh-button inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                                        <ArrowPathIcon className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true"/> Refresh
-                                    </button>
-                                </div>
-                                {(filteredIssuedItems && filteredIssuedItems.length > 0) ? (
-                                    <>
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue#</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Copy#</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book Title</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issued</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due</th></tr></thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
-                                                    {paginatedIssuedItems.map(issue => (<tr key={issue.id} className="hover:bg-gray-50"><td className="px-4 py-4 text-sm text-gray-500">{issue.id}</td><td className="px-4 py-4 text-sm text-gray-500">{issue.copy_id}</td><td className="px-6 py-4 text-sm font-medium text-gray-900">{issue.book_copy?.book?.title || 'N/A'}</td><td className="px-6 py-4 text-sm text-gray-500">{issue.client?.username || 'N/A'}</td><td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{issue.issue_date ? new Date(issue.issue_date).toLocaleDateString() : 'N/A'}</td><td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{issue.due_date ? new Date(issue.due_date).toLocaleDateString() : 'N/A'}</td></tr>))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        {issueTotalPages > 1 && (
-                                            <div className="pagination-controls mt-4 pt-4 border-t border-gray-200 flex justify-center items-center gap-4"><button onClick={goToPreviousIssuePage} disabled={issueCurrentPage === 1 || isLoading} className={paginationButtonClass}>Previous</button><span className="text-sm font-medium text-gray-700">Page {issueCurrentPage} of {issueTotalPages}</span><button onClick={goToNextIssuePage} disabled={issueCurrentPage === issueTotalPages || isLoading} className={paginationButtonClass}>Next</button></div>
-                                        )}
-                                    </>
-                                ) : ( <p className="text-center text-gray-500 py-6">{issueSearchTerm ? 'No issued items match your search.' : 'No books are currently issued.'}</p> )}
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+            {/* Tabs */}
+            <div className="mb-6 flex space-x-2 border-b border-gray-200">
+                {['copies', 'issue', 'return'].map(tab => (
+                    <button key={tab} onClick={() => setActiveTab(tab)}
+                        className={`pb-3 px-4 text-sm font-medium transition-all relative ${
+                            activeTab === tab ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'
+                        }`}>
+                        {tab === 'copies' ? 'Inventory' : tab === 'issue' ? 'Issue Book' : 'Returns'}
+                        {activeTab === tab && <motion.div layoutId="underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600" />}
+                    </button>
+                ))}
             </div>
+
+            {/* Content Area */}
+            <AnimatePresence mode="wait">
+                <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+                    {activeTab === 'copies' && <InventoryTab {...data} loading={loading} onAddCopy={(d, r) => handleAction(copyIssueService.createCopy({book_id:+d.book_id, location_id:+d.location_id}), "Copy Added!", r)} />}
+                    {activeTab === 'issue' && <IssuingTab {...data} loading={loading} onIssueBook={(d, r) => handleAction(copyIssueService.issueBook({copy_id:+d.copy_id, client_id:+d.client_id, due_date:d.due_date}), "Book Issued!", r)} />}
+                    {activeTab === 'return' && <ReturnsTab {...data} loading={loading} onReturnBook={(id, r) => handleAction(copyIssueService.returnBook(+id), "Book Returned!", r)} />}
+                </motion.div>
+            </AnimatePresence>
         </div>
     );
 };

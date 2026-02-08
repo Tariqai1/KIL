@@ -8,10 +8,12 @@ class BookPermission(Base):
     
     id = Column(Integer, primary_key=True)
     book_id = Column(Integer, ForeignKey('books.id', ondelete="CASCADE"), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.ClientID', ondelete="CASCADE"), nullable=True)
-    role_id = Column(Integer, ForeignKey('roles.id', ondelete="CASCADE"), nullable=True)
     
-    # --- BADLAV YAHAN HAI ---
+    # --- YAHAN BADLAV KIYA GAYA HAI ---
+    # 'users.ClientID' ko 'users.id' kar diya gaya hai
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=True)
+    
+    role_id = Column(Integer, ForeignKey('roles.id', ondelete="CASCADE"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     __table_args__ = {'mysql_engine': 'InnoDB'}

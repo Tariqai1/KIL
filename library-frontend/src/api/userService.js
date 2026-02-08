@@ -1,11 +1,12 @@
-// src/api/userService.js
 import apiClient from './apiClient';
 
-// --- FUNCTION DEFINITIONS ---
+// ==========================================
+// 1. 👤 USER MANAGEMENT (Admin Only)
+// Base URL: /api/users/
+// ==========================================
 
 /**
- * Fetches all registered users (Admin only).
- * API Endpoint: GET /api/users/
+ * Fetches all registered users.
  */
 const getAllUsers = async () => {
     try {
@@ -18,24 +19,8 @@ const getAllUsers = async () => {
 };
 
 /**
- * Fetches all available roles (for dropdowns).
- * API Endpoint: GET /api/users/roles/
- */
-const getAllRoles = async () => {
-    try {
-        const response = await apiClient.get('/api/users/roles/');
-        return response.data;
-    } catch (error) {
-        console.error("Error fetching roles:", error.response?.data || error.message);
-        throw error.response?.data || new Error('Failed to fetch roles');
-    }
-};
-
-/**
- * Creates a new user (Admin only).
- * API Endpoint: POST /api/users/
+ * Creates a new user.
  * @param {object} userData - { username, email, password, role_id, full_name }
- * @returns {Promise<object>} The newly created user object.
  */
 const createUser = async (userData) => {
     try {
@@ -48,11 +33,7 @@ const createUser = async (userData) => {
 };
 
 /**
- * Updates an existing user (Admin only).
- * API Endpoint: PUT /api/users/{id}/
- * @param {number} userId - The ID of the user to update.
- * @param {object} userData - { full_name, role_id, status }
- * @returns {Promise<object>} The updated user object.
+ * Updates an existing user (Role, Status, Name).
  */
 const updateUser = async (userId, userData) => {
     try {
@@ -65,10 +46,7 @@ const updateUser = async (userId, userData) => {
 };
 
 /**
- * Deletes a user (soft delete) (Admin only).
- * API Endpoint: DELETE /api/users/{id}/
- * @param {number} userId - The ID of the user to delete.
- * @returns {Promise<object>} Confirmation message.
+ * Soft deletes a user.
  */
 const deleteUser = async (userId) => {
     try {
@@ -80,82 +58,134 @@ const deleteUser = async (userId) => {
     }
 };
 
-
-// --- "MY PROFILE" FUNCTIONS ---
+// ==========================================
+// 2. 🛡️ ROLE MANAGEMENT (Admin Only)
+// Base URL: /api/roles/  <-- (FIXED 405 ERROR HERE)
+// ==========================================
 
 /**
- * Fetches the profile for the *currently logged-in* user.
- * API Endpoint: GET /api/users/me/
- * @returns {Promise<object>} The current user's object.
+ * Fetches all available roles.
+ */
+const getAllRoles = async () => {
+    try {
+        // ✅ CHANGE: URL updated from /api/users/roles/ to /api/roles/
+        const response = await apiClient.get('/api/roles/');
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching roles:", error.response?.data || error.message);
+        throw error.response?.data || new Error('Failed to fetch roles');
+    }
+};
+
+/**
+ * Create a new Role (Optional, for Role Registry Page)
+ */
+const createRole = async (roleData) => {
+    try {
+        const response = await apiClient.post('/api/roles/', roleData);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || new Error('Failed to create role');
+    }
+};
+
+/**
+ * Update a Role (Name/Description)
+ */
+const updateRole = async (roleId, roleData) => {
+    try {
+        const response = await apiClient.put(`/api/roles/${roleId}/`, roleData);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || new Error('Failed to update role');
+    }
+};
+
+/**
+ * Delete a Role
+ */
+const deleteRole = async (roleId) => {
+    try {
+        await apiClient.delete(`/api/roles/${roleId}/`);
+        return true;
+    } catch (error) {
+        throw error.response?.data || new Error('Failed to delete role');
+    }
+};
+
+// ==========================================
+// 3. 🏠 MY PROFILE (Logged-in User)
+// Base URL: /api/profile/  <-- (UPDATED FOR NEW CONTROLLER)
+// ==========================================
+
+/**
+ * Fetches current user profile (includes permissions).
  */
 const getMe = async () => {
     try {
-        const response = await apiClient.get('/api/users/me/');
+        // ✅ CHANGE: Updated path to match profile_controller
+        const response = await apiClient.get('/api/profile/');
         return response.data;
     } catch (error) {
-        console.error("Error fetching current user profile:", error.response?.data || error.message);
+        console.error("Error fetching profile:", error.response?.data || error.message);
         throw error.response?.data || new Error('Failed to fetch profile');
     }
 };
 
 /**
- * Updates the profile for the *currently logged-in* user.
- * API Endpoint: PUT /api/users/me/
- * @param {object} profileData - { full_name, email (if allowed) }
- * @returns {Promise<object>} The updated user object.
+ * Updates current user profile (Full Name).
  */
 const updateMe = async (profileData) => {
     try {
-        const response = await apiClient.put('/api/users/me/', profileData);
+        const response = await apiClient.put('/api/profile/', profileData);
         return response.data;
     } catch (error) {
-        console.error("Error updating current user profile:", error.response?.data || error.message);
+        console.error("Error updating profile:", error.response?.data || error.message);
         throw error.response?.data || new Error('Failed to update profile');
     }
 };
 
 /**
- * Changes the password for the *currently logged-in* user.
- * API Endpoint: POST /api/users/me/change-password/
- * @param {object} passwordData - { current_password, new_password, confirm_password }
- * @returns {Promise<object>} Success message.
+ * Changes password.
  */
 const changePassword = async (passwordData) => {
     try {
-        const response = await apiClient.post('/api/users/me/change-password/', passwordData);
-        return response.data; // Will likely be empty on success (204 No Content)
+        const response = await apiClient.post('/api/profile/change-password/', passwordData);
+        return response.data;
     } catch (error) {
         console.error("Error changing password:", error.response?.data || error.message);
-        // Important: throw the error.detail from the backend (e.g., "Incorrect current password.")
         throw error.response?.data || new Error('Failed to change password');
     }
 };
 
 /**
- * Fetches the issued book history for the *currently logged-in* user.
- * API Endpoint: GET /api/users/me/issued-books/
- * @returns {Promise<Array>} List of issue records.
+ * Fetches issued books history.
  */
 const getMyIssuedBooks = async () => {
     try {
-        const response = await apiClient.get('/api/users/me/issued-books/');
+        const response = await apiClient.get('/api/profile/issued-books/');
         return response.data;
     } catch (error) {
-        console.error("Error fetching issued books history:", error.response?.data || error.message);
+        console.error("Error fetching history:", error.response?.data || error.message);
         throw error.response?.data || new Error('Failed to fetch book history');
     }
 };
 
 // --- NAMED EXPORT ---
 export const userService = {
-    // Admin functions
+    // Admin - Users
     getAllUsers,
-    getAllRoles,
     createUser,
     updateUser,
     deleteUser,
 
-    // "My Profile" functions
+    // Admin - Roles
+    getAllRoles,
+    createRole,
+    updateRole,
+    deleteRole,
+
+    // Profile
     getMe,
     updateMe,
     changePassword,

@@ -1,29 +1,46 @@
-# file: controllers/upload_controller.py
 from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
-import shutil
-import uuid
-from pathlib import Path
 from auth import require_permission
+from utils.cloudinary_helper import upload_to_cloudinary  # ✅ New Import
 
 router = APIRouter()
 
-UPLOAD_DIRECTORY = Path("static/images")
-
+# --- 1. IMAGE UPLOAD ---
 @router.post("/image", dependencies=[Depends(require_permission("FILE_UPLOAD"))])
 async def upload_image(file: UploadFile = File(...)):
-    UPLOAD_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    """
+    Book cover image upload karta hai aur Cloudinary URL return karta hai.
+    """
+    # 1. Validation check (Security)
+    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, WEBP are allowed.")
     
-    unique_id = uuid.uuid4()
-    # Sanitize filename
-    safe_filename = "".join(c for c in file.filename if c.isalnum() or c in ('.', '_', '-')).strip()
-    filename = f"{unique_id}_{safe_filename}"
-    file_path = UPLOAD_DIRECTORY / filename
+    # 2. Upload to Cloudinary (Folder: covers)
+    url = upload_to_cloudinary(file, folder="booknest/covers")
+    
+    # 3. Error Handling
+    if not url:
+        raise HTTPException(status_code=500, detail="Image upload failed on server.")
+        
+    # 4. Return URL (Frontend compatible)
+    return {"url": url}
 
-    try:
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not save file: {e}")
 
-    # Return a relative URL path
-    return {"url": f"/{file_path.as_posix()}"}
+# --- 2. PDF UPLOAD ---
+@router.post("/pdf", dependencies=[Depends(require_permission("FILE_UPLOAD"))])
+async def upload_pdf(file: UploadFile = File(...)):
+    """
+    Book PDF upload karta hai aur Cloudinary URL return karta hai.
+    """
+    # 1. Validation check (Security)
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF is allowed.")
+        
+    # 2. Upload to Cloudinary (Folder: pdfs)
+    url = upload_to_cloudinary(file, folder="booknest/pdfs")
+    
+    # 3. Error Handling
+    if not url:
+        raise HTTPException(status_code=500, detail="PDF upload failed on server.")
+        
+    # 4. Return URL (Frontend compatible)
+    return {"url": url}

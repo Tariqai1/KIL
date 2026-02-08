@@ -1,6 +1,7 @@
 // src/pages/AuditLogPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { logService } from "../api/logService";
+import logService from "../api/logService"; // ✅ default export recommended
+
 import {
   ArrowPathIcon,
   MagnifyingGlassIcon,
@@ -19,7 +20,7 @@ const AuditLogPage = () => {
   const [filterTargetType, setFilterTargetType] = useState("");
   const [searchText, setSearchText] = useState("");
 
-  // Applied filters state (Server side filter ke liye)
+  // Applied filters state (Server-side filters)
   const [appliedFilters, setAppliedFilters] = useState({
     userId: "",
     actionType: "",
@@ -31,35 +32,60 @@ const AuditLogPage = () => {
   const itemsPerPage = 25;
   const [hasNextPage, setHasNextPage] = useState(true);
 
-  // --- HELPER FUNCTIONS ---
-  
+  // ----------------------------
+  // Helpers
+  // ----------------------------
   const safeText = (v) => (v === null || v === undefined ? "" : String(v));
 
   const formatDateTime = (value) => {
     if (!value) return "N/A";
     try {
       const d = new Date(value);
-      return isNaN(d.getTime()) ? "N/A" : d.toLocaleString();
+      return Number.isNaN(d.getTime()) ? "N/A" : d.toLocaleString();
     } catch {
       return "N/A";
     }
   };
 
-  // Color Coding for Actions
+  const extractErrorMessage = (err) => {
+    const detail = err?.response?.data?.detail || err?.detail;
+
+    if (typeof detail === "string") return detail;
+
+    if (Array.isArray(detail)) {
+      const msg = detail.map((e) => e?.msg).filter(Boolean).join(", ");
+      return msg || "Validation error";
+    }
+
+    if (typeof err?.message === "string") return err.message;
+
+    return "Could not fetch audit logs.";
+  };
+
   const actionBadgeClass = (actionType) => {
     const a = (actionType || "").toUpperCase();
-    if (a.includes("CREATED") || a.includes("ADD")) return "bg-emerald-50 text-emerald-700 border border-emerald-200";
-    if (a.includes("UPDATED") || a.includes("EDIT")) return "bg-blue-50 text-blue-700 border border-blue-200";
-    if (a.includes("DELETED") || a.includes("REMOVE")) return "bg-red-50 text-red-700 border border-red-200";
-    if (a.includes("LOGIN") || a.includes("AUTH")) return "bg-purple-50 text-purple-700 border border-purple-200";
+
+    if (a.includes("CREATED") || a.includes("ADD"))
+      return "bg-emerald-50 text-emerald-700 border border-emerald-200";
+    if (a.includes("UPDATED") || a.includes("EDIT"))
+      return "bg-blue-50 text-blue-700 border border-blue-200";
+    if (a.includes("DELETED") || a.includes("REMOVE"))
+      return "bg-red-50 text-red-700 border border-red-200";
+    if (a.includes("LOGIN") || a.includes("AUTH"))
+      return "bg-purple-50 text-purple-700 border border-purple-200";
+    if (a.includes("APPROVED"))
+      return "bg-green-50 text-green-700 border border-green-200";
+
     return "bg-slate-50 text-slate-700 border border-slate-200";
   };
 
-  // --- API CALLS ---
-
+  // ----------------------------
+  // Fetch Logs (server-side pagination)
+  // ----------------------------
   const fetchLogs = async (page, filters) => {
     setIsLoading(true);
     setError("");
+
     const skip = (page - 1) * itemsPerPage;
 
     try {
@@ -73,35 +99,33 @@ const AuditLogPage = () => {
 
       const data = await logService.getLogs(payload);
 
-      // Data Validation
-      if (Array.isArray(data)) {
-        setLogs(data);
-        setHasNextPage(data.length === itemsPerPage);
-      } else {
-        setLogs([]);
-        setHasNextPage(false);
-      }
+      const list = Array.isArray(data) ? data : [];
+      setLogs(list);
+      setHasNextPage(list.length === itemsPerPage);
       setCurrentPage(page);
     } catch (err) {
-      console.error("Fetch error:", err);
+      console.error("❌ Fetch Logs Error:", err);
       setLogs([]);
-      setError("Failed to load logs. Please check your connection.");
+      setHasNextPage(false);
+      setError(extractErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Initial Load + Filter Change Listener
+  // Initial load + applied filter change + page change
   useEffect(() => {
     fetchLogs(currentPage, appliedFilters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedFilters, currentPage]);
 
-  // --- HANDLERS ---
-
+  // ----------------------------
+  // Apply Filters
+  // ----------------------------
   const handleApplyFilters = (e) => {
     e.preventDefault();
     setCurrentPage(1);
+
     setAppliedFilters({
       userId: filterUserId.trim(),
       actionType: filterActionType.trim(),
@@ -115,41 +139,76 @@ const AuditLogPage = () => {
     setFilterTargetType("");
     setSearchText("");
     setCurrentPage(1);
-    setAppliedFilters({ userId: "", actionType: "", targetType: "" });
+
+    setAppliedFilters({
+      userId: "",
+      actionType: "",
+      targetType: "",
+    });
   };
 
-  // Client-Side Search (Jo data screen par hai usme dhundna)
+  // ----------------------------
+  // Client-side Search (only on current fetched page)
+  // ----------------------------
   const filteredLogs = useMemo(() => {
     if (!searchText.trim()) return logs;
+
     const q = searchText.trim().toLowerCase();
+
     return logs.filter((log) => {
       const joined = [
-        log.action_type,
-        log.description,
-        log.target_type,
-        log.action_by?.username,
-      ].map(safeText).join(" ").toLowerCase();
+        log?.action_type,
+        log?.description,
+        log?.target_type,
+        log?.target_id,
+        log?.action_by?.username,
+        log?.action_by_id,
+      ]
+        .map(safeText)
+        .join(" ")
+        .toLowerCase();
+
       return joined.includes(q);
     });
   }, [logs, searchText]);
 
-  // --- RENDER ---
+  // ----------------------------
+  // Pagination
+  // ----------------------------
+  const goPrev = () => {
+    if (currentPage <= 1 || isLoading) return;
+    setCurrentPage((p) => p - 1);
+  };
 
+  const goNext = () => {
+    if (!hasNextPage || isLoading) return;
+    setCurrentPage((p) => p + 1);
+  };
+
+  // ----------------------------
+  // UI
+  // ----------------------------
   return (
     <div className="p-6 max-w-[1600px] mx-auto space-y-8">
-      
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Audit Logs</h1>
-          <p className="text-slate-500 mt-1">Track system security and user activities.</p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            Audit Logs
+          </h1>
+          <p className="text-slate-500 mt-1">
+            Track system security and user activities.
+          </p>
         </div>
+
         <button
           onClick={() => fetchLogs(currentPage, appliedFilters)}
           disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors shadow-sm font-medium"
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors shadow-sm font-medium disabled:opacity-50"
         >
-          <ArrowPathIcon className={`h-5 w-5 ${isLoading ? "animate-spin" : ""}`} />
+          <ArrowPathIcon
+            className={`h-5 w-5 ${isLoading ? "animate-spin" : ""}`}
+          />
           Refresh Data
         </button>
       </div>
@@ -163,9 +222,11 @@ const AuditLogPage = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* User ID Input */}
+            {/* User ID */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">User ID</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                User ID
+              </label>
               <input
                 type="number"
                 value={filterUserId}
@@ -174,31 +235,40 @@ const AuditLogPage = () => {
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               />
             </div>
-            {/* Action Type Input */}
+
+            {/* Action */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Action</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                Action
+              </label>
               <input
                 type="text"
                 value={filterActionType}
                 onChange={(e) => setFilterActionType(e.target.value)}
-                placeholder="e.g. DELETE"
+                placeholder="e.g. LOGIN_SUCCESS"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               />
             </div>
-             {/* Target Type Input */}
-             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Target</label>
+
+            {/* Target */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                Target
+              </label>
               <input
                 type="text"
                 value={filterTargetType}
                 onChange={(e) => setFilterTargetType(e.target.value)}
-                placeholder="e.g. BOOK"
+                placeholder="e.g. Book / User"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               />
             </div>
-             {/* Local Search Input */}
-             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Quick Search</label>
+
+            {/* Quick Search */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                Quick Search (current page)
+              </label>
               <div className="relative">
                 <MagnifyingGlassIcon className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input
@@ -213,17 +283,36 @@ const AuditLogPage = () => {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={isLoading} className="px-6 py-2 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/20">
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="px-6 py-2 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/20 disabled:opacity-50"
+            >
               Apply Filters
             </button>
-            <button type="button" onClick={handleClearFilters} disabled={isLoading} className="px-6 py-2 bg-white text-slate-600 font-bold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              disabled={isLoading}
+              className="px-6 py-2 bg-white text-slate-600 font-bold border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
               Clear All
             </button>
+
+            <div className="ml-auto text-sm text-slate-500 flex items-center">
+              Showing{" "}
+              <span className="mx-1 font-bold text-slate-700">
+                {filteredLogs.length}
+              </span>
+              logs • Page{" "}
+              <span className="ml-1 font-bold text-slate-700">{currentPage}</span>
+            </div>
           </div>
         </form>
       </div>
 
-      {/* ERROR MESSAGE */}
+      {/* ERROR */}
       {error && (
         <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-center gap-3">
           <XMarkIcon className="h-5 w-5" />
@@ -244,47 +333,84 @@ const AuditLogPage = () => {
                 <th className="px-6 py-4 w-1/3">Description</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-slate-400">Loading data...</td>
+                  <td colSpan="5" className="px-6 py-12 text-center text-slate-400">
+                    Loading data...
+                  </td>
                 </tr>
               ) : filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-slate-400">No logs found matching your criteria.</td>
+                  <td colSpan="5" className="px-6 py-12 text-center text-slate-400">
+                    No logs found matching your criteria.
+                  </td>
                 </tr>
               ) : (
                 filteredLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 font-mono text-xs">{formatDateTime(log.timestamp || log.created_at)}</td>
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-slate-900">{log.action_by?.username || "System"}</div>
-                      <div className="text-xs text-slate-400">ID: {log.action_by_id || "N/A"}</div>
+                    <td className="px-6 py-4 font-mono text-xs">
+                      {formatDateTime(log.timestamp || log.created_at)}
                     </td>
+
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide ${actionBadgeClass(log.action_type)}`}>
-                        {log.action_type}
+                      <div className="font-bold text-slate-900">
+                        {log?.action_by?.username || "System"}
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        ID: {log?.action_by_id ?? "N/A"}
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide ${actionBadgeClass(
+                          log.action_type
+                        )}`}
+                      >
+                        {log.action_type || "UNKNOWN"}
                       </span>
                     </td>
+
                     <td className="px-6 py-4">
-                      <div className="font-medium text-slate-700">{log.target_type || "-"}</div>
-                      <div className="text-xs text-slate-400">ID: {log.target_id || "-"}</div>
+                      <div className="font-medium text-slate-700">
+                        {log.target_type || "-"}
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        ID: {log.target_id ?? "-"}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-xs leading-relaxed">{log.description || "No description provided."}</td>
+
+                    <td className="px-6 py-4 text-xs leading-relaxed">
+                      {log.description || "No description provided."}
+                    </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
-        
+
         {/* PAGINATION */}
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-          <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1 || isLoading} className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-600 disabled:opacity-50 text-sm font-medium hover:bg-slate-50">
+          <button
+            onClick={goPrev}
+            disabled={currentPage === 1 || isLoading}
+            className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-600 disabled:opacity-50 text-sm font-medium hover:bg-slate-50"
+          >
             Previous
           </button>
-          <span className="text-sm font-bold text-slate-600">Page {currentPage}</span>
-          <button onClick={() => setCurrentPage(p => p + 1)} disabled={!hasNextPage || isLoading} className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-600 disabled:opacity-50 text-sm font-medium hover:bg-slate-50">
+
+          <span className="text-sm font-bold text-slate-600">
+            Page {currentPage}
+          </span>
+
+          <button
+            onClick={goNext}
+            disabled={!hasNextPage || isLoading}
+            className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-600 disabled:opacity-50 text-sm font-medium hover:bg-slate-50"
+          >
             Next
           </button>
         </div>

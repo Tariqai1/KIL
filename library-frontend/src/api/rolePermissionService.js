@@ -1,107 +1,123 @@
-// src/api/rolePermissionService.js
 import apiClient from './apiClient';
 
 /**
  * Service for managing Roles and Permissions.
- * Note: Endpoints are specific to the backend structure (e.g., /api/users/roles/).
+ * Fully optimized to match the Python Backend endpoints.
  */
 export const rolePermissionService = {
 
-    // --- Role CRUD ---
+    // ==========================================
+    // 1. Role Fetching (Fixes 404 Error)
+    // ==========================================
 
-    /** * Fetch all roles 
-     * API: GET /api/users/roles/ 
+    /**
+     * Fetch all roles.
+     * Backend Path: GET /api/permissions/roles
      */
     async getAllRoles() {
         try {
-            const response = await apiClient.get('/api/users/roles/');
+            // ✅ Note: No trailing slash at the end
+            const response = await apiClient.get('/api/permissions/roles');
             return response.data;
         } catch (error) {
-            console.error('Error fetching roles:', error.response?.data);
-            throw error.response?.data || { detail: 'Failed to fetch roles' };
-        }
-    },
-
-    /** * Fetch role details 
-     * API: GET /api/users/roles/{id}/ 
-     */
-    async getRoleDetails(roleId) {
-        try {
-            const response = await apiClient.get(`/api/users/roles/${roleId}/`);
-            return response.data;
-        } catch (error) {
-            console.error(`Error fetching role ${roleId}:`, error.response?.data);
-            throw error.response?.data || { detail: 'Failed to fetch role details' };
-        }
-    },
-
-    /** * Create a new role 
-     * API: POST /api/users/roles/ 
-     */
-    async createRole(roleData) {
-        try {
-            const response = await apiClient.post('/api/users/roles/', roleData);
-            return response.data;
-        } catch (error) {
-            console.error('Error creating role:', error.response?.data);
-            throw error.response?.data || { detail: 'Failed to create role' };
-        }
-    },
-
-    /** * Update an existing role 
-     * API: PUT /api/users/roles/{id}/ 
-     */
-    async updateRole(roleId, roleData) {
-        try {
-            const response = await apiClient.put(`/api/users/roles/${roleId}/`, roleData);
-            return response.data;
-        } catch (error) {
-            console.error(`Error updating role ${roleId}:`, error.response?.data);
-            throw error.response?.data || { detail: 'Failed to update role' };
-        }
-    },
-
-    /** * Delete a role 
-     * API: DELETE /api/users/roles/{id}/ 
-     */
-    async deleteRole(roleId) {
-        try {
-            const response = await apiClient.delete(`/api/users/roles/${roleId}/`);
-            return response.data;
-        } catch (error) {
-            console.error(`Error deleting role ${roleId}:`, error.response?.data);
-            throw error.response?.data || { detail: 'Failed to delete role' };
-        }
-    },
-
-    // --- Permission Management ---
-
-    /** * Fetch all available permissions 
-     * API: GET /api/permissions/permissions/ 
-     */
-    async getAllPermissions() {
-        try {
-            const response = await apiClient.get('/api/permissions/permissions/');
-            return response.data;
-        } catch (error) {
-            console.error('Error fetching permissions:', error.response?.data);
-            throw error.response?.data || { detail: 'Failed to fetch permissions' };
+            console.error('Fetch Roles Error:', error.response?.data);
+            throw error.response?.data || { detail: 'Roles fetch nahi ho sake.' };
         }
     },
 
     /**
-     * Assign permissions to a role
-     * API: POST /api/permissions/roles/{id}/permissions
-     * Payload: { permission_ids: [1, 2, 3] }
+     * Fetch details of a single role.
+     * Backend Path: GET /api/permissions/roles/{id}
      */
-    async updatePermissionsForRole(roleId, permissionIdsObject) {
+    async getRoleDetails(roleId) {
         try {
-            // Backend expects POST for assignment
-            const response = await apiClient.post(`/api/permissions/roles/${roleId}/permissions`, permissionIdsObject);
+            const response = await apiClient.get(`/api/permissions/roles/${roleId}`);
             return response.data;
         } catch (error) {
-            console.error('Error updating permissions:', error.response?.data);
-            throw error.response?.data || { detail: 'Failed to update permissions' };
+            console.error(`Fetch Role ${roleId} Error:`, error.response?.data);
+            throw error.response?.data || { detail: 'Role details nahi mili.' };
+        }
+    },
+
+    // ==========================================
+    // 2. Permission Fetching
+    // ==========================================
+
+    /**
+     * Fetch all available permissions.
+     * Backend Path: GET /api/permissions/permissions
+     */
+    async getAllPermissions() {
+        try {
+            // ✅ Matches @router.get("/permissions") inside /api/permissions prefix
+            const response = await apiClient.get('/api/permissions/permissions');
+            return response.data;
+        } catch (error) {
+            console.error('Fetch Permissions Error:', error.response?.data);
+            throw error.response?.data || { detail: 'Permissions load nahi huin.' };
+        }
+    },
+
+    // ==========================================
+    // 3. Permission Assignment
+    // ==========================================
+
+    /**
+     * Assign permissions to a role.
+     * Backend Path: POST /api/permissions/roles/{id}/permissions
+     */
+   // src/api/rolePermissionService.js
+
+// src/api/rolePermissionService.js
+
+async updatePermissionsForRole(roleId, permissionIds) {
+    try {
+        // ✅ اہم ترین تبدیلی: ڈیٹا کو اس فارمیٹ میں پیک کریں
+        const payload = {
+            permission_ids: Array.from(permissionIds) 
+        };
+        
+        console.log("Sending Payload:", payload); // چیک کرنے کے لیے
+        
+        const response = await apiClient.post(`/api/permissions/roles/${roleId}/permissions`, payload);
+        return response.data;
+    } catch (error) {
+        console.error('Update Permissions Error:', error.response?.data);
+        throw error.response?.data || { detail: 'Mapping failed' };
+    }
+},
+    // ==========================================
+    // 4. Role CRUD (Create/Update/Delete)
+    // ==========================================
+    
+    // Note: Agar aapne Backend mein Create/Update/Delete ke endpoints abhi nahi banaye, 
+    // to ye neeche wale functions 405 Method Not Allowed de sakte hain.
+    // Filhal hum 'Fetching' fix kar rahe hain.
+
+    async createRole(roleData) {
+        try {
+            const response = await apiClient.post('/api/permissions/roles', roleData);
+            return response.data;
+        } catch (error) {
+            throw error.response?.data || { detail: 'Role create nahi hua.' };
+        }
+    },
+
+    async updateRole(roleId, roleData) {
+        try {
+            const response = await apiClient.put(`/api/permissions/roles/${roleId}`, roleData);
+            return response.data;
+        } catch (error) {
+            throw error.response?.data || { detail: 'Role update nahi hua.' };
+        }
+    },
+
+    async deleteRole(roleId) {
+        try {
+            const response = await apiClient.delete(`/api/permissions/roles/${roleId}`);
+            return response.data;
+        } catch (error) {
+            throw error.response?.data || { detail: 'Role delete nahi hua.' };
         }
     }
 };

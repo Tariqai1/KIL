@@ -1,62 +1,73 @@
-// src/api/axiosConfig.js
-import axios from 'axios';
+import axios from "axios";
 
-// Backend URL (FastAPI default port)
-const BASE_URL = 'http://127.0.0.1:8000'; 
+// ✅ Backend URL (local + server)
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
+// ✅ Standard Key (same everywhere)
+const ACCESS_TOKEN_KEY = "access_token";
+const USER_KEY = "user_details";
 
 const api = axios.create({
-    baseURL: BASE_URL,
-    // Default headers
-    headers: {
-        'Content-Type': 'application/json',
-    },
+  baseURL: BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
 /**
- * --- REQUEST INTERCEPTOR ---
- * Har request bhejne se pehle ye function chalega.
- * Ye LocalStorage se Token nikal kar Header mein laga deta hai.
+ * ✅ REQUEST INTERCEPTOR
+ * Har request ke sath token attach karega
+ * localStorage OR sessionStorage dono support
  */
 api.interceptors.request.use(
-    (config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            config.headers['Authorization'] = `Bearer ${token}`;
-        }
-        return config;
-    },
-    (error) => {
-        return Promise.reject(error);
+  (config) => {
+    const token =
+      localStorage.getItem(ACCESS_TOKEN_KEY) ||
+      sessionStorage.getItem(ACCESS_TOKEN_KEY);
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
 );
 
 /**
- * --- RESPONSE INTERCEPTOR ---
- * Backend se response aane par ye function chalega.
- * Agar backend "401 Unauthorized" bole, iska matlab token expire ho gaya.
+ * ✅ RESPONSE INTERCEPTOR
+ * 401 aane pe logout + redirect
+ * BUT login request pe redirect nahi karega
  */
 api.interceptors.response.use(
-    (response) => {
-        // Agar sab sahi hai, to response aage jane do
-        return response;
-    },
-    (error) => {
-        // Agar 401 Error aaye (Unauthorized)
-        if (error.response && error.response.status === 401) {
-            console.warn("Session expired or unauthorized. Logging out...");
-            
-            // Storage clear karo
-            localStorage.removeItem('token');
-            localStorage.removeItem('user_details');
-            
-            // User ko Login page par bhejo (Force Redirect)
-            // Note: Hum window.location use kar rahe hain taaki state poora fresh ho jaye
-            if (window.location.pathname !== '/login') {
-                window.location.href = '/login';
-            }
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      const requestUrl = error.config?.url || "";
+
+      // ✅ Login endpoint pe auto logout mat karo
+      const isLoginRequest =
+        requestUrl.includes("/api/token") ||
+        requestUrl.includes("/api/auth/google");
+
+      if (!isLoginRequest) {
+        console.warn("Session expired. Logging out...");
+
+        // clear storage
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+        sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+        sessionStorage.removeItem(USER_KEY);
+
+        // redirect
+        if (window.location.pathname !== "/login") {
+          window.location.href = "/login";
         }
-        return Promise.reject(error);
+      }
     }
+
+    return Promise.reject(error);
+  }
 );
 
 export default api;
