@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-# Response Model (Frontend ko ye 6 images milengi)
+# Response Model (Frontend will receive these 6 images + ID + timestamp)
 class DonationInfoResponse(BaseModel):
     id: int
     
@@ -18,7 +18,8 @@ class DonationInfoResponse(BaseModel):
     bank_desktop: Optional[str] = None
     bank_mobile: Optional[str] = None
 
-    updated_at: datetime
+    # Timestamp
+    updated_at: Optional[datetime] = None
 
     class Config:
-        from_attributes = True  # ORM mode on
+        from_attributes = True  # Allows Pydantic to read data from SQLAlchemy models
