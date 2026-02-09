@@ -1,9 +1,9 @@
 import os
 import sys
 import logging
+import bcrypt  # ✅ Essential for the patch
 from contextlib import asynccontextmanager
 from pathlib import Path
-import bcrypt  # ✅ Essential for the patch
 
 import uvicorn
 from dotenv import load_dotenv
@@ -21,9 +21,12 @@ from sqlalchemy import text
 # =====================================================
 # This must run before any other logic to prevent login errors on Python 3.12+
 if not hasattr(bcrypt, '__about__'):
-    class About:
-        __version__ = bcrypt.__version__
-    bcrypt.__about__ = About()
+    try:
+        class About:
+            __version__ = bcrypt.__version__
+        bcrypt.__about__ = About()
+    except Exception:
+        pass
 
 # =====================================================
 # 1. SETUP PATHS & ENV
@@ -87,9 +90,8 @@ async def lifespan(app: FastAPI):
     """
     logger.info("🔄 Starting BookNest API...")
     
-    # 1. Database Check & Table Creation
+    # Database Check & Table Creation
     try:
-        # Create Tables
         Base.metadata.create_all(bind=engine)
         
         # Verify Connection
@@ -108,8 +110,8 @@ async def lifespan(app: FastAPI):
 # =====================================================
 app = FastAPI(
     title="BookNest Library API",
-    version="6.3.0",
-    description="Full-featured Library API (Local + Render Ready)",
+    version="6.5.0",
+    description="Full-featured Library API (Optimized Router Order)",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -118,19 +120,19 @@ app = FastAPI(
 # =====================================================
 # 6. STATIC FILES SETUP
 # =====================================================
-# Use Absolute Paths (Fixes errors on Render)
 static_dir = BASE_DIR / "static"
 uploads_dir = static_dir / "uploads"
 posts_dir = uploads_dir / "posts"
+images_dir = static_dir / "images" # ✅ Added images folder for Logo
 
 # Create directories if they don't exist
-for folder in [static_dir, uploads_dir, posts_dir]:
+for folder in [static_dir, uploads_dir, posts_dir, images_dir]:
     folder.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # =====================================================
-# 7. CORS MIDDLEWARE (Security)
+# 7. CORS MIDDLEWARE
 # =====================================================
 origins = [
     "http://localhost:5173",
@@ -144,7 +146,7 @@ origins = [
     "https://pkil-two.vercel.app/"
 ]
 
-# Add Production URL from Environment Variable if exists
+# Add Production URL from Environment Variable
 env_frontend_url = os.getenv("FRONTEND_URL")
 if env_frontend_url:
     origins.append(env_frontend_url)
@@ -225,10 +227,15 @@ api_router.include_router(log_controller.router, prefix="/logs", tags=["Logs"])
 
 # --- Public & Extra ---
 api_router.include_router(public_user_controller.router, prefix="/public", tags=["Public Actions"])
-api_router.include_router(book_read_controller.router, prefix="/books", tags=["Books (Read)"])
+
+# ✅ FIX: Static routes (Manage) MUST come before Dynamic routes (Read by ID)
 api_router.include_router(book_management_controller.router, prefix="/books", tags=["Books (Manage)"])
+api_router.include_router(book_read_controller.router, prefix="/books", tags=["Books (Read)"])
+
 api_router.include_router(post_controller.router, prefix="/posts", tags=["Markaz News"])
-api_router.include_router(donation_controller.router, tags=["Donation"])
+
+# ✅ FIX: Added prefix so route becomes /api/donation
+api_router.include_router(donation_controller.router, prefix="/donation", tags=["Donation"])
 
 # Add Main Router to App
 app.include_router(api_router)
@@ -259,7 +266,7 @@ def nuke_issues(db: Session = Depends(get_db)):
 
 @app.get("/api/setup-permissions", tags=["Setup"])
 def setup_default_permissions(db: Session = Depends(get_db)):
-    """Creates default permissions and assigns to Admin."""
+    """Creates default permissions."""
     permission_groups = {
         "User Management": ["USER_VIEW", "USER_MANAGE"],
         "Library Management": ["BOOK_VIEW", "BOOK_MANAGE", "BOOK_ISSUE"],
@@ -272,7 +279,6 @@ def setup_default_permissions(db: Session = Depends(get_db)):
     all_perms = []
     
     try:
-        # Create Permissions
         for group, names in permission_groups.items():
             for name in names:
                 desc = f"{group}: {name.replace('_', ' ').title()}"
@@ -284,7 +290,6 @@ def setup_default_permissions(db: Session = Depends(get_db)):
                 all_perms.append(db_perm)
         db.flush()
 
-        # Assign to Admin
         admin_roles = db.query(user_model.Role).filter(
             user_model.Role.name.in_([ "Admin", "SuperAdmin", "Administrator"])
         ).all()
@@ -304,10 +309,7 @@ def setup_default_permissions(db: Session = Depends(get_db)):
 # 11. MAIN ENTRY POINT
 # =====================================================
 if __name__ == "__main__":
-    # Render provides PORT in env, Local uses 8000
     port = int(os.getenv("PORT", 8000))
-    # Render needs 0.0.0.0 to expose the server
     host = "0.0.0.0"
-    
     logger.info(f"🚀 Server starting on http://{host}:{port}")
     uvicorn.run("main:app", host=host, port=port, reload=True)
