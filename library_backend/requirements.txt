@@ -3,6 +3,7 @@ gunicorn
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
+bcrypt==3.2.2
 pydantic[email]
 python-jose[cryptography]
 passlib[bcrypt]
