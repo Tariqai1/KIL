@@ -1,16 +1,13 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
 from database import get_db
-from models import DonationInfo
-from schemas import DonationInfoResponse
-
-# ✅ Cloudinary Helper Import
+# Ensure these imports work based on your folder structure
+from models.donation_model import DonationInfo 
+from schemas.donation_schema import DonationInfoResponse
 from utils.cloudinary_helper import upload_to_cloudinary
 
-router = APIRouter(
-    prefix="/api/donation",
-    tags=["Donation"]
-)
+# ✅ Router Initialize (Prefix hataya kyunki main.py me already hai)
+router = APIRouter()
 
 # ============================================================
 # 1. GET Donation Info (Public)
@@ -31,8 +28,8 @@ def get_donation_details(db: Session = Depends(get_db)):
 # ============================================================
 # 2. UPDATE Donation Info (Admin Panel - Cloudinary Support)
 # ============================================================
-@router.put("/update/")
-def update_donation_details(
+@router.put("/update")
+async def update_donation_details(
     # --- Desktop Files ---
     qr_code_desktop: UploadFile = File(None),
     appeal_desktop: UploadFile = File(None),
@@ -52,11 +49,11 @@ def update_donation_details(
         db.add(info)
 
     # 2. Helper Function to Upload & Update
-    # Ye function check karega agar file aayi hai to upload kare, warna purana rehne de
-    def process_upload(file_obj, folder_name="library_donation"):
-        if file_obj:
+    async def process_upload(file_obj, folder_name="library_donation"):
+        if file_obj and file_obj.filename:
             print(f"Uploading {file_obj.filename} to Cloudinary...")
-            url = upload_to_cloudinary(file_obj, folder=folder_name)
+            # Ensure read/seek is handled if using async
+            url = upload_to_cloudinary(file_obj.file, folder=folder_name)
             return url
         return None
 
@@ -64,29 +61,29 @@ def update_donation_details(
     
     # QR Codes
     if qr_code_desktop:
-        url = process_upload(qr_code_desktop)
+        url = await process_upload(qr_code_desktop)
         if url: info.qr_code_desktop = url
         
     if qr_code_mobile:
-        url = process_upload(qr_code_mobile)
+        url = await process_upload(qr_code_mobile)
         if url: info.qr_code_mobile = url
 
     # Appeal Images
     if appeal_desktop:
-        url = process_upload(appeal_desktop)
+        url = await process_upload(appeal_desktop)
         if url: info.appeal_desktop = url
         
     if appeal_mobile:
-        url = process_upload(appeal_mobile)
+        url = await process_upload(appeal_mobile)
         if url: info.appeal_mobile = url
 
     # Bank Details
     if bank_desktop:
-        url = process_upload(bank_desktop)
+        url = await process_upload(bank_desktop)
         if url: info.bank_desktop = url
         
     if bank_mobile:
-        url = process_upload(bank_mobile)
+        url = await process_upload(bank_mobile)
         if url: info.bank_mobile = url
 
     # 4. Save to Database
