@@ -12,7 +12,7 @@ import {
   FaFacebookF,
   FaXTwitter,
   FaInstagram,
-} from "react-icons/fa";
+} from "react-icons/fa6";
 
 const Footer = () => {
   // ✅ Social Links (Your Provided Links)
