@@ -66,6 +66,8 @@ origins = [
     "http://127.0.0.1:5174",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://pkil-two.vercel.app",  # ✅ Ye line add karein (Vercel URL)
+    "https://pkil-two.vercel.app/"
 ]
 
 app.add_middleware(
