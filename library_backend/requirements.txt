@@ -12,3 +12,6 @@ alembic
 aiofiles
 cloudinary
 python-multipart
+google-auth
+google-auth-oauthlib
+requests
