@@ -1,5 +1,12 @@
 import os
+import sys
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
+import bcrypt  # ✅ Essential for the patch
+
+import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, Request, status, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,21 +14,48 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
- 
-# --- Import Database & Models ---
+from sqlalchemy import text
+
+# =====================================================
+# 🛠️ CRITICAL FIX: Passlib & Bcrypt Compatibility Patch
+# =====================================================
+# This must run before any other logic to prevent login errors on Python 3.12+
+if not hasattr(bcrypt, '__about__'):
+    class About:
+        __version__ = bcrypt.__version__
+    bcrypt.__about__ = About()
+
+# =====================================================
+# 1. SETUP PATHS & ENV
+# =====================================================
+BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = BASE_DIR.parent / ".env"
+load_dotenv(ENV_PATH)
+
+# Setup Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# =====================================================
+# 2. DATABASE IMPORTS
+# =====================================================
 from database import engine, Base, get_db
 from models import user_model, permission_model, library_management_models
 
-# --- Import Controllers ---
+# =====================================================
+# 3. CONTROLLER IMPORTS
+# =====================================================
 from controllers import (
     auth_controller,
-    google_auth_controller,  # ✅ ADD: Google Login Controller
-
-    user_controller,       # Admin User Management
-    role_controller,       # ✅ NEW: Role Management
-    profile_controller,    # ✅ NEW: Logged-in User Profile
+    google_auth_controller,
+    user_controller,
+    role_controller,
+    profile_controller,
     permission_controller,
-
     category_controller,
     subcategory_controller,
     language_controller,
@@ -35,30 +69,69 @@ from controllers import (
     request_user_controller,
     public_user_controller,
     request_controller,
-    book_read_controller,       # ✅ Naya (Public/View)
+    book_read_controller,
     book_management_controller,
-    password_controller,  # ✅ NEW: Password Management (Forgot/Reset
+    password_controller,
     post_controller,
     donation_controller
 )
 
-# --- Create Database Tables ---
-# This ensures all tables exist before the app starts
-print("Checking and creating database tables...")
-Base.metadata.create_all(bind=engine)
-print("Database tables verified.")
+# =====================================================
+# 4. LIFESPAN MANAGER
+# =====================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application Startup & Shutdown Logic.
+    Ensures Database Tables exist before server starts.
+    """
+    logger.info("🔄 Starting BookNest API...")
+    
+    # 1. Database Check & Table Creation
+    try:
+        # Create Tables
+        Base.metadata.create_all(bind=engine)
+        
+        # Verify Connection
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        logger.info("✅ Database Tables Verified & Connected.")
+    except Exception as e:
+        logger.critical(f"❌ DATABASE ERROR: {str(e)}")
+    
+    yield  # Server runs here
+    
+    logger.info("🛑 Shutting down BookNest API...")
 
-# --- Initialize FastAPI App ---
+# =====================================================
+# 5. INITIALIZE FASTAPI
+# =====================================================
 app = FastAPI(
     title="BookNest Library API",
-    version="6.1.0",
-    description="Full-featured Library API with Dynamic Permissions & Role Management.",
+    version="6.3.0",
+    description="Full-featured Library API (Local + Render Ready)",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
-# --- CORS Middleware ---
-# Defines who can access your API
+# =====================================================
+# 6. STATIC FILES SETUP
+# =====================================================
+# Use Absolute Paths (Fixes errors on Render)
+static_dir = BASE_DIR / "static"
+uploads_dir = static_dir / "uploads"
+posts_dir = uploads_dir / "posts"
+
+# Create directories if they don't exist
+for folder in [static_dir, uploads_dir, posts_dir]:
+    folder.mkdir(parents=True, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# =====================================================
+# 7. CORS MIDDLEWARE (Security)
+# =====================================================
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -66,9 +139,15 @@ origins = [
     "http://127.0.0.1:5174",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://pkil-two.vercel.app",  # ✅ Ye line add karein (Vercel URL)
+    # ✅ YOUR VERCEL APP URL
+    "https://pkil-two.vercel.app",
     "https://pkil-two.vercel.app/"
 ]
+
+# Add Production URL from Environment Variable if exists
+env_frontend_url = os.getenv("FRONTEND_URL")
+if env_frontend_url:
+    origins.append(env_frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,21 +156,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(donation_controller.router)
-# --- STATIC FILES MOUNTING ---
-static_path = Path("static")
-static_path.mkdir(parents=True, exist_ok=True)
 
-# ✅ define uploads_path properly
-uploads_path = static_path / "uploads"
-uploads_path.mkdir(parents=True, exist_ok=True)
-
-# ✅ NEW: posts folder (for Markaz posts uploads)
-(uploads_path / "posts").mkdir(parents=True, exist_ok=True)
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-# --- Custom Exception Handler ---
-# Converts validation errors into readable JSON responses
+# =====================================================
+# 8. EXCEPTION HANDLERS
+# =====================================================
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     error_details = []
@@ -99,22 +167,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         for error in exc.errors():
             input_repr = error.get("input")
             if isinstance(input_repr, bytes):
-                input_repr = f"<bytes data, length {len(input_repr)}>"
-            elif input_repr is not None and not isinstance(input_repr, (str, int, float, bool, list, dict)):
-                input_repr = repr(input_repr)
+                input_repr = f"<bytes, len={len(input_repr)}>"
+            elif input_repr and not isinstance(input_repr, (str, int, float, bool, list, dict)):
+                input_repr = str(input_repr)
 
             error_details.append({
                 "loc": error.get("loc"),
                 "msg": error.get("msg"),
                 "type": error.get("type"),
-                "input_preview": str(input_repr)[:200]
+                "input_preview": str(input_repr)[:100] if input_repr else "N/A"
             })
-
-        print(f"--- Validation Error --- \n{error_details}\n--- End Validation Error ---")
-
+        
+        logger.warning(f"⚠️ Validation Error: {error_details}")
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=jsonable_encoder({"detail": error_details}),
+            content=jsonable_encoder({"detail": error_details, "message": "Validation Failed"}),
         )
     except Exception:
         return JSONResponse(
@@ -122,32 +189,23 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             content={"detail": "Internal server error during validation."}
         )
 
-# ==========================================
-# ROUTER REGISTRATION
-# ==========================================
-
-# Create a main API router with prefix "/api"
+# =====================================================
+# 9. ROUTER REGISTRATION
+# =====================================================
 api_router = APIRouter(prefix="/api")
 
-# 1. Authentication
+# --- Authentication ---
 api_router.include_router(auth_controller.router, tags=["Authentication"])
-
-# ✅ Google Authentication
-# NOTE: google_auth_controller me route "/auth/google" hona chahiye
-# Final endpoint: POST /api/auth/google
 api_router.include_router(google_auth_controller.router, tags=["Google Auth"])
+api_router.include_router(password_controller.router, prefix="/auth", tags=["Password Reset"])
 
-# 2. Identity Management (Refactored)
-# ✅ Profile: For logged-in users (My Profile, Change Password)
+# --- Users & Roles ---
 api_router.include_router(profile_controller.router, prefix="/profile", tags=["Profile"])
-# ✅ Users: For Admin to manage other users
 api_router.include_router(user_controller.router, prefix="/users", tags=["Users"])
-# ✅ Roles: For Admin to manage Roles
 api_router.include_router(role_controller.router, prefix="/roles", tags=["Roles"])
-# ✅ Permissions: For Admin to view/assign permissions
 api_router.include_router(permission_controller.router, prefix="/permissions", tags=["Permissions"])
 
-# 3. Library Content Management
+# --- Library Content ---
 api_router.include_router(category_controller.router, prefix="/categories", tags=["Categories"])
 api_router.include_router(subcategory_controller.router, prefix="/subcategories", tags=["Subcategories"])
 api_router.include_router(language_controller.router, prefix="/languages", tags=["Languages"])
@@ -155,124 +213,101 @@ api_router.include_router(location_controller.router, prefix="/locations", tags=
 api_router.include_router(book_copy_controller.router, prefix="/copies", tags=["Copies"])
 api_router.include_router(upload_controller.router, prefix="/upload", tags=["Uploads"])
 
-# 4. Operations & Circulation
+# --- Operations ---
 api_router.include_router(issue_controller.router, prefix="/issues", tags=["Issues"])
-api_router.include_router(request_controller.router, prefix="/requests", tags=["Admin Requests"])
-api_router.include_router(request_user_controller.router, prefix="/restricted-requests", tags=["User Requests"])
+api_router.include_router(request_controller.router, prefix="/requests", tags=["Requests (Admin)"])
+api_router.include_router(request_user_controller.router, prefix="/restricted-requests", tags=["Requests (User)"])
 
-# 5. Security & Logs
+# --- Security & Logs ---
 api_router.include_router(book_permission_controller.router, prefix="/book-permissions", tags=["Book Permissions"])
 api_router.include_router(digital_access_controller.router, prefix="/digital-access", tags=["Digital Access"])
 api_router.include_router(log_controller.router, prefix="/logs", tags=["Logs"])
 
-# 6. Public Actions (No Auth Required)
+# --- Public & Extra ---
 api_router.include_router(public_user_controller.router, prefix="/public", tags=["Public Actions"])
 api_router.include_router(book_read_controller.router, prefix="/books", tags=["Books (Read)"])
 api_router.include_router(book_management_controller.router, prefix="/books", tags=["Books (Manage)"])
 api_router.include_router(post_controller.router, prefix="/posts", tags=["Markaz News"])
-# Add the main API router to the App
-app.include_router(api_router)
-app.include_router(password_controller.router, prefix="/api/auth", tags=["Password Reset"])
-app.include_router(profile_controller.router, prefix="/api/profile", tags=["Profile"])
-# ==========================================
-# UTILITY & SETUP ENDPOINTS
-# ==========================================
+api_router.include_router(donation_controller.router, tags=["Donation"])
 
-# --- BRAHMASTRA ROUTE (Cleanup Issues) ---
+# Add Main Router to App
+app.include_router(api_router)
+
+# =====================================================
+# 10. UTILITY ENDPOINTS
+# =====================================================
+
+@app.get("/", tags=["System"])
+def root():
+    return {"message": "Welcome to BookNest Library API", "status": "running"}
+
+@app.get("/api/health", tags=["System"])
+def health_check():
+    return {"status": "ok", "version": app.version}
+
 @app.get("/api/nuke-issues", tags=["Debug"])
 def nuke_issues(db: Session = Depends(get_db)):
+    """Deletes all issued books (Emergency cleanup)"""
     try:
-        # Import dynamically to avoid circular issues during startup if tables are broken
         from models.library_management_models import IssuedBook
         deleted_count = db.query(IssuedBook).delete()
         db.commit()
-        return {"message": f"Successfully deleted {deleted_count} corrupt issue records. Dashboard should work now."}
+        return {"message": f"Successfully deleted {deleted_count} corrupt issue records."}
     except Exception as e:
         db.rollback()
         return {"message": f"Error deleting issues: {str(e)}"}
 
-# --- SETUP PERMISSIONS ROUTE ---
 @app.get("/api/setup-permissions", tags=["Setup"])
 def setup_default_permissions(db: Session = Depends(get_db)):
-    """
-    Advanced setup to populate permissions and automatically
-    link them to the Super Admin role.
-    """
-    # 1. Grouped Permissions for better organization
+    """Creates default permissions and assigns to Admin."""
     permission_groups = {
-        "User Management": [
-            {"name": "USER_VIEW", "description": "Can view user lists and profiles"},
-            {"name": "USER_MANAGE", "description": "Can create, edit, and delete users"},
-        ],
-        "Library Management": [
-            {"name": "BOOK_VIEW", "description": "Can view the book library"},
-            {"name": "BOOK_MANAGE", "description": "Can add, edit, and delete books"},
-            {"name": "BOOK_ISSUE", "description": "Can issue and return physical book copies"},
-        ],
-        "Security & Roles": [
-            {"name": "ROLE_VIEW", "description": "Can view system roles"},
-            {"name": "ROLE_MANAGE", "description": "Can create and modify roles"},
-            {"name": "ROLE_PERMISSION_ASSIGN", "description": "Can assign permissions to roles"},
-            {"name": "PERMISSION_VIEW", "description": "Can view all available permissions"},
-        ],
-        "Access Requests": [
-            {"name": "REQUEST_VIEW", "description": "Can view pending digital access requests"},
-            {"name": "REQUEST_MANAGE", "description": "Can approve or reject access requests"},
-        ],
-        "System Audit": [
-            {"name": "LOGS_VIEW", "description": "Can view system audit logs and activity"},
-        ]
+        "User Management": ["USER_VIEW", "USER_MANAGE"],
+        "Library Management": ["BOOK_VIEW", "BOOK_MANAGE", "BOOK_ISSUE"],
+        "Security & Roles": ["ROLE_VIEW", "ROLE_MANAGE", "ROLE_PERMISSION_ASSIGN", "PERMISSION_VIEW"],
+        "Access Requests": ["REQUEST_VIEW", "REQUEST_MANAGE"],
+        "System Audit": ["LOGS_VIEW"]
     }
-
-    all_perms = [p for group in permission_groups.values() for p in group]
-    added_names = []
-    all_db_permissions = []
-
-    # 2. Bulk Create Permissions
-    for p_data in all_perms:
-        db_perm = db.query(permission_model.Permission).filter(
-            permission_model.Permission.name == p_data["name"]
-        ).first()
-
-        if not db_perm:
-            db_perm = permission_model.Permission(
-                name=p_data["name"],
-                description=p_data["description"]
-            )
-            db.add(db_perm)
-            added_names.append(p_data["name"])
-
-        all_db_permissions.append(db_perm)
-
-    db.flush()
-
-    # 3. Automatically link all permissions to 'Admin' or 'SuperAdmin' role
-    admin_role = db.query(user_model.Role).filter(
-        user_model.Role.name.in_(["Admin", "SuperAdmin", "Administrator"])
-    ).first()
-
-    link_message = "Admin role not found."
-    if admin_role:
-        # Update permissions: ensuring Admin has EVERYTHING
-        current_perms = set(admin_role.permissions)
-        new_perms = set(all_db_permissions)
-        admin_role.permissions = list(current_perms.union(new_perms))
-        link_message = f"All permissions linked to role: {admin_role.name}"
-
+    
+    added = []
+    all_perms = []
+    
     try:
+        # Create Permissions
+        for group, names in permission_groups.items():
+            for name in names:
+                desc = f"{group}: {name.replace('_', ' ').title()}"
+                db_perm = db.query(permission_model.Permission).filter_by(name=name).first()
+                if not db_perm:
+                    db_perm = permission_model.Permission(name=name, description=desc)
+                    db.add(db_perm)
+                    added.append(name)
+                all_perms.append(db_perm)
+        db.flush()
+
+        # Assign to Admin
+        admin_roles = db.query(user_model.Role).filter(
+            user_model.Role.name.in_([ "Admin", "SuperAdmin", "Administrator"])
+        ).all()
+        
+        for role in admin_roles:
+            current = set(role.permissions)
+            new_p = set(all_perms)
+            role.permissions = list(current.union(new_p))
+            
         db.commit()
-        return {
-            "status": "Success",
-            "permissions_created": len(added_names),
-            "total_permissions_in_system": len(all_db_permissions),
-            "role_assignment": link_message,
-            "newly_added": added_names
-        }
+        return {"status": "Success", "added": len(added)}
     except Exception as e:
         db.rollback()
-        return {"status": "Error", "detail": str(e)}
+        return {"error": str(e)}
 
-# --- Run Server ---
+# =====================================================
+# 11. MAIN ENTRY POINT
+# =====================================================
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    # Render provides PORT in env, Local uses 8000
+    port = int(os.getenv("PORT", 8000))
+    # Render needs 0.0.0.0 to expose the server
+    host = "0.0.0.0"
+    
+    logger.info(f"🚀 Server starting on http://{host}:{port}")
+    uvicorn.run("main:app", host=host, port=port, reload=True)
