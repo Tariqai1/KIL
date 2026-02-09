@@ -26,9 +26,10 @@ try:
 except ValueError:
     ACCESS_TOKEN_EXPIRE_MINUTES = 43200
 
+# Password Hashing Config
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# ✅ auto_error=False => optional auth supported
+# ✅ auto_error=False => allows optional auth (public endpoints can check if user exists)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token", auto_error=False)
 
 
@@ -37,21 +38,23 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token", auto_error=False)
 # ==========================================================
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifies a raw password against a hash."""
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
+    """Generates a bcrypt hash for a password."""
     return pwd_context.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     """
     ✅ Creates JWT token
-    IMPORTANT: sub should always be string
+    IMPORTANT: 'sub' (subject) must always be a string in JWT standards.
     """
     to_encode = data.copy()
 
-    # ✅ Always keep sub as string
+    # ✅ Fix: Ensure sub is string (because User ID is int)
     if "sub" in to_encode and to_encode["sub"] is not None:
         to_encode["sub"] = str(to_encode["sub"])
 
@@ -65,6 +68,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 
 def get_db():
+    """Database dependency."""
     db = SessionLocal()
     try:
         yield db
@@ -73,13 +77,12 @@ def get_db():
 
 
 # ==========================================================
-# ✅ TOKEN -> USER FETCH (FIXED)
+# ✅ TOKEN -> USER FETCH
 # ==========================================================
 
 async def get_user_from_token(token: str, db: Session) -> Optional[user_model.User]:
     """
     ✅ Decodes token and fetches User + Role + Permissions.
-    FIX: sub is user_id (example: "20"), not username
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -88,7 +91,7 @@ async def get_user_from_token(token: str, db: Session) -> Optional[user_model.Us
         if sub is None:
             return None
 
-        # ✅ Convert sub -> int user_id safely
+        # ✅ Fix: Convert 'sub' (string) back to 'int' for DB query
         try:
             user_id = int(sub)
         except ValueError:
@@ -97,12 +100,13 @@ async def get_user_from_token(token: str, db: Session) -> Optional[user_model.Us
     except JWTError:
         return None
 
+    # Fetch User with Role and Permissions loaded eagerly
     user = (
         db.query(user_model.User)
         .options(
             joinedload(user_model.User.role).joinedload(user_model.Role.permissions)
         )
-        .filter(user_model.User.id == user_id)  # ✅ FIXED HERE
+        .filter(user_model.User.id == user_id)
         .first()
     )
 
@@ -110,7 +114,7 @@ async def get_user_from_token(token: str, db: Session) -> Optional[user_model.Us
 
 
 # ==========================================================
-# ✅ CURRENT USER (OPTIONAL + REQUIRED)
+# ✅ CURRENT USER DEPENDENCIES
 # ==========================================================
 
 async def get_current_user_optional(
@@ -118,8 +122,8 @@ async def get_current_user_optional(
     db: Session = Depends(get_db)
 ) -> Optional[user_model.User]:
     """
-    ✅ PUBLIC ACCESS
-    Returns user if logged in else None
+    ✅ PUBLIC ACCESS: Returns user object if logged in, else None.
+    Does not raise 401 error.
     """
     if not token:
         return None
@@ -133,8 +137,8 @@ async def get_current_user(
     db: Session = Depends(get_db)
 ) -> user_model.User:
     """
-    🔒 PRIVATE/PROTECTED ACCESS
-    Returns 401 if not logged in or invalid token
+    🔒 PRIVATE ACCESS: Returns User object.
+    Raises 401 if not logged in or invalid token.
     """
     auth_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -150,9 +154,13 @@ async def get_current_user(
     if user is None:
         raise auth_exception
 
-    # ✅ Status check
+    # ✅ Active Status Check
+    # Assuming 'Active' is the correct status string. Adjust if you use 'active' lowercase.
     if user.status and str(user.status).lower() != "active":
-        raise HTTPException(status_code=400, detail="User account is inactive.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="User account is inactive."
+        )
 
     return user
 
@@ -163,28 +171,28 @@ async def get_current_user(
 
 def require_permission(permission_code: str):
     """
-    Dependency to check user permissions.
+    Dependency to check if the current user has a specific permission.
     """
-
     async def permission_checker(
         current_user: user_model.User = Depends(get_current_user),
     ):
-        # ✅ Admin bypass
-        if current_user.role and current_user.role.name and current_user.role.name.lower() in [
-            "admin", "superadmin", "administrator"
-        ]:
-            return current_user
+        # 1. ✅ Admin Bypass: Super Admins get access to everything
+        if current_user.role and current_user.role.name:
+            role_name = current_user.role.name.lower()
+            if role_name in ["admin", "superadmin", "administrator"]:
+                return current_user
 
-        # ✅ Collect permissions
+        # 2. ✅ Collect Permissions from DB
         user_perms = set()
-
         if current_user.role and current_user.role.permissions:
             for p in current_user.role.permissions:
+                # Support both 'code' and 'name' fields for flexibility
                 if hasattr(p, "code") and p.code:
                     user_perms.add(p.code)
                 elif hasattr(p, "name") and p.name:
                     user_perms.add(p.name)
 
+        # 3. ✅ Check if required permission exists
         if permission_code not in user_perms:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
