@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import Column, Integer, String, DateTime
 from datetime import datetime
-from database import Base 
+from database import Base
 
 class DonationInfo(Base):
     __tablename__ = "donation_info"
@@ -19,7 +19,7 @@ class DonationInfo(Base):
     bank_desktop = Column(String, nullable=True)
     bank_mobile  = Column(String, nullable=True)
 
-    # Timestamp
+    # Timestamp (Track kab update hua)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
